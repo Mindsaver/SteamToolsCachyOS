@@ -9,7 +9,12 @@ a = Analysis(
         ('/home/mindsaver/Dev/projects/fsrpatch/scripts/steam-game-symlinks.sh', '.'),
         ('/home/mindsaver/Dev/projects/fsrpatch/assets/symlink-steam-logo.png', '.'),
     ],
-    hiddenimports=[],
+    hiddenimports=[
+        'dll_ffx_versions',
+        'vdf',
+        'steam_launch_options_core',
+        'launch_options_window',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

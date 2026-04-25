@@ -14,7 +14,7 @@ fi
 python3 -m venv "$BUILD_VENV"
 source "$BUILD_VENV/bin/activate"
 python -m pip install --upgrade pip
-python -m pip install PySide6 pyinstaller
+python -m pip install PySide6 pyinstaller vdf
 
 pyinstaller \
   --noconfirm \
@@ -23,6 +23,9 @@ pyinstaller \
   --name Symlink-Steam \
   --paths "$SCRIPTS_DIR" \
   --hidden-import dll_ffx_versions \
+  --hidden-import vdf \
+  --hidden-import steam_launch_options_core \
+  --hidden-import launch_options_window \
   --add-data "$SCRIPTS_DIR/steam-game-symlinks.sh:." \
   --add-data "$ROOT_DIR/assets/symlink-steam-logo.png:." \
   "$APP_SCRIPT"

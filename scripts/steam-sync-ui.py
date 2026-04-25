@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from dll_ffx_versions import analyze_dll
+from launch_options_window import open_launch_options_manager
 
 
 APP_NAME = "Symlink-Steam"
@@ -160,6 +161,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(APP_NAME)
         self.resize(860, 560)
         self.process: QProcess | None = None
+        self._launch_options_manager_ref: object | None = None
 
         root = QWidget(self)
         self.setCentralWidget(root)
@@ -227,6 +229,10 @@ class MainWindow(QMainWindow):
         self.update_btn = QPushButton("Update FSR DLL")
         self.update_btn.clicked.connect(self.start_update_dll)
         actions.addWidget(self.update_btn)
+
+        self.launch_opts_btn = QPushButton("Launch Options…")
+        self.launch_opts_btn.clicked.connect(self._open_launch_options)
+        actions.addWidget(self.launch_opts_btn)
 
         actions.addStretch(1)
 
@@ -318,6 +324,9 @@ class MainWindow(QMainWindow):
             self.create_btn.setEnabled(False)
             self.update_btn.setEnabled(False)
             self.drop_zone.setEnabled(False)
+
+    def _open_launch_options(self) -> None:
+        open_launch_options_manager(self, APP_NAME)
 
     def choose_dll(self) -> None:
         start_dir = str(Path(self.dll_input.text()).expanduser().parent) if self.dll_input.text().strip() else str(Path.home())
