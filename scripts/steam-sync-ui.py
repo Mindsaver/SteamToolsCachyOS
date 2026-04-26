@@ -82,7 +82,11 @@ def build_app_icon() -> QIcon:
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(APP_NAME)
+        self._release_version = steamtools_update.read_local_version_string()
+        if self._release_version:
+            self.setWindowTitle(f"{APP_NAME} — {self._release_version}")
+        else:
+            self.setWindowTitle(APP_NAME)
         self.resize(860, 560)
         self.process: QProcess | None = None
         self._launch_options_manager_ref: object | None = None
@@ -102,6 +106,13 @@ class MainWindow(QMainWindow):
         title = QLabel("SteamToolsCachyOS")
         title.setStyleSheet("font-size: 18px; font-weight: 600;")
         layout.addWidget(title)
+
+        if self._release_version:
+            ver_lbl = QLabel(f"Version {self._release_version}")
+        else:
+            ver_lbl = QLabel("Version — development (not a release install)")
+        ver_lbl.setStyleSheet("color: #888; font-size: 12px;")
+        layout.addWidget(ver_lbl)
 
         desc = QLabel(
             "Create per-game folders (symlinks + a \"Start in Steam\" shortcut in each). "
@@ -255,6 +266,9 @@ def main() -> int:
     app.setApplicationName("SteamToolsCachyOS")
     app.setApplicationDisplayName(APP_NAME)
     app.setDesktopFileName("SteamToolsCachyOS")
+    _ver = steamtools_update.read_local_version_string()
+    if _ver:
+        app.setApplicationVersion(_ver)
 
     icon = build_app_icon()
     if not icon.isNull():
