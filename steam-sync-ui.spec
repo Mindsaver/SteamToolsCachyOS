@@ -18,6 +18,7 @@ a = Analysis(
         'launch_options_compose',
         'launch_options_structured_panel',
         'gpu_vendor_detect',
+        'steam_compat_context',
     ],
     hookspath=[],
     hooksconfig={},

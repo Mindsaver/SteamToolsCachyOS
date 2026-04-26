@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 
 import gpu_vendor_detect
 import launch_options_compose as compose
+import steam_compat_context as steam_compat
 import steam_launch_options_core as core
 from launch_options_structured_panel import StructuredLaunchPanel
 
@@ -64,6 +65,7 @@ class LaunchOptionsWindow(QMainWindow):
         self._batch_op_index = 0
         self._syncing_structured = False
         self._gpu_info = gpu_vendor_detect.detect_gpu_vendors()
+        self._compat_load = steam_compat.CompatToolMappingLoad({})
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -138,6 +140,10 @@ class LaunchOptionsWindow(QMainWindow):
         self._filter_edit.textChanged.connect(self._on_filter_text_changed)
         top.addWidget(self._filter_edit, stretch=1)
         outer.addLayout(top)
+        self._global_compat_label = QLabel("")
+        self._global_compat_label.setWordWrap(True)
+        self._global_compat_label.setStyleSheet("color: #9ec1ff; font-size: 12px;")
+        outer.addWidget(self._global_compat_label)
 
         self._tip_frame = QWidget()
         tip_l = QVBoxLayout(self._tip_frame)
@@ -164,15 +170,18 @@ class LaunchOptionsWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         outer.addWidget(splitter, stretch=1)
 
-        self._table = QTableWidget(0, 3)
-        self._table.setHorizontalHeaderLabels(["ID", "Game", "What Steam has now"])
+        self._table = QTableWidget(0, 4)
+        self._table.setHorizontalHeaderLabels(
+            ["ID", "Game", "Compat (this game)", "What Steam has now"]
+        )
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._table.setAlternatingRowColors(True)
         hh = self._table.horizontalHeader()
         hh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        hh.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        hh.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self._table.itemSelectionChanged.connect(self._on_table_selection_changed)
         splitter.addWidget(self._table)
 
@@ -193,6 +202,16 @@ class LaunchOptionsWindow(QMainWindow):
         self._single_hint.setWordWrap(True)
         self._single_hint.setStyleSheet("color: #aaa; font-size: 12px;")
         sv.addWidget(self._single_hint)
+
+        self._compat_banner = QLabel("")
+        self._compat_banner.setWordWrap(True)
+        self._compat_banner.setTextFormat(Qt.TextFormat.RichText)
+        self._compat_banner.setVisible(False)
+        self._compat_banner.setStyleSheet(
+            "background-color: rgba(100, 120, 200, 0.12); color: #c5cae9; padding: 8px 10px; "
+            "border-radius: 8px; border: 1px solid rgba(120, 140, 220, 0.35); font-size: 12px;"
+        )
+        sv.addWidget(self._compat_banner)
 
         self._unknown_banner = QLabel("")
         self._unknown_banner.setWordWrap(True)
@@ -447,8 +466,29 @@ class LaunchOptionsWindow(QMainWindow):
         self._reload_accounts()
         if not self._account_id and self._account_combo.count() > 0:
             self._account_id = self._account_combo.currentText()
+        self._refresh_compat_cache()
         self._reload_games_only()
         self._load_vdf_and_refresh_table()
+
+    def _refresh_compat_cache(self) -> None:
+        self._compat_load = steam_compat.load_compat_tool_mapping(self._steam)
+        self._update_global_compat_label()
+
+    def _update_global_compat_label(self) -> None:
+        dname = steam_compat.get_default_tool_name(self._compat_load.entries)
+        err = self._compat_load.read_error
+        if err:
+            self._global_compat_label.setText(f"Global compatibility default: unavailable ({err})")
+            return
+        if not dname:
+            self._global_compat_label.setText("Global compatibility default: not set in CompatToolMapping")
+            return
+        tool_dir = steam_compat.resolve_tool_install_dir(self._steam, dname)
+        if tool_dir is not None:
+            src = f"compatibilitytools.d/{tool_dir.name}"
+        else:
+            src = "Steam built-in/runtime (not found in compatibilitytools.d)"
+        self._global_compat_label.setText(f"Global compatibility default: {dname}  ({src})")
 
     def _count_selected_rows(self) -> int:
         n = 0
@@ -496,6 +536,10 @@ class LaunchOptionsWindow(QMainWindow):
         self._table.blockSignals(True)
         self._table.setSortingEnabled(False)
         self._table.setRowCount(0)
+        m = self._compat_load.entries
+        err = self._compat_load.read_error
+        dname = steam_compat.get_default_tool_name(m)
+        tool_source_cache: dict[str, bool] = {}
         for g in self._games:
             lo = core.get_launch_options(self._vdf_root, g.appid)
             row = self._table.rowCount()
@@ -506,12 +550,33 @@ class LaunchOptionsWindow(QMainWindow):
             name_item = QTableWidgetItem(g.name)
             name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self._table.setItem(row, 1, name_item)
+            aname = steam_compat.get_app_compat_entry_name(m, g.appid)
+            pc, pt = steam_compat.table_per_game_cell(dname, aname, read_error=err)
+            effective = steam_compat.effective_tool_name(dname, aname)
+            if effective and pc == "inherits":
+                pc = effective
+                pt = (
+                    f"Uses Steam default because no per-game row exists. Effective tool: {effective}."
+                )
+            if effective:
+                cached = tool_source_cache.get(effective)
+                if cached is None:
+                    cached = steam_compat.resolve_tool_install_dir(self._steam, effective) is not None
+                    tool_source_cache[effective] = cached
+                if cached:
+                    pt += "\nSource: compatibilitytools.d"
+                else:
+                    pt += "\nSource: not found in compatibilitytools.d (likely Steam built-in/runtime)"
+            pg_item = QTableWidgetItem(pc)
+            pg_item.setFlags(pg_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            pg_item.setToolTip(pt)
+            self._table.setItem(row, 2, pg_item)
             lo_display = lo if len(lo) <= 120 else lo[:117] + "…"
             lo_item = QTableWidgetItem(lo_display)
             lo_item.setFlags(lo_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             lo_item.setToolTip(lo.replace("\t", " ") if lo else "(empty)")
             lo_item.setData(Qt.ItemDataRole.UserRole, lo)
-            self._table.setItem(row, 2, lo_item)
+            self._table.setItem(row, 3, lo_item)
         self._table.setSortingEnabled(True)
         self._table.sortByColumn(1, Qt.SortOrder.AscendingOrder)
         self._table.blockSignals(False)
@@ -606,7 +671,9 @@ class LaunchOptionsWindow(QMainWindow):
             self._syncing_structured = True
             self._structured_panel.populate_from_model(compose.LaunchOptionsModel())
             self._syncing_structured = False
+            self._structured_panel.set_global_env_markers({})
             self._unknown_banner.setVisible(False)
+            self._compat_banner.setVisible(False)
             self._on_single_text_changed()
             self._update_window_dirty_title()
             return
@@ -628,7 +695,9 @@ class LaunchOptionsWindow(QMainWindow):
             self._syncing_structured = True
             self._structured_panel.populate_from_model(compose.LaunchOptionsModel())
             self._syncing_structured = False
+            self._structured_panel.set_global_env_markers({})
             self._unknown_banner.setVisible(False)
+            self._compat_banner.setVisible(False)
             self._on_single_text_changed()
             self._update_window_dirty_title()
             return
@@ -642,6 +711,24 @@ class LaunchOptionsWindow(QMainWindow):
                 break
         text = core.get_launch_options(self._vdf_root, aid) if aid is not None else ""
         self._single_title.setText(f"Editing: {name}")
+        if aid is not None:
+            self._compat_banner.setText(
+                steam_compat.format_compat_detail_html(
+                    self._steam,
+                    self._compat_load.entries,
+                    aid,
+                    read_error=self._compat_load.read_error,
+                )
+            )
+            self._compat_banner.setVisible(True)
+            default_n = steam_compat.get_default_tool_name(self._compat_load.entries)
+            app_n = steam_compat.get_app_compat_entry_name(self._compat_load.entries, aid)
+            effective = steam_compat.effective_tool_name(default_n, app_n)
+            tool_dir = steam_compat.resolve_tool_install_dir(self._steam, effective) if effective else None
+            self._structured_panel.set_global_env_markers(steam_compat.user_settings_env_overrides(tool_dir))
+        else:
+            self._compat_banner.setVisible(False)
+            self._structured_panel.set_global_env_markers({})
         self._detail_baseline = text
         self._single_editor.blockSignals(True)
         self._single_editor.setPlainText(text)
@@ -791,7 +878,7 @@ class LaunchOptionsWindow(QMainWindow):
         for r in range(self._table.rowCount()):
             it = self._table.item(r, 0)
             if it and it.text() == str(appid):
-                lo_item = self._table.item(r, 2)
+                lo_item = self._table.item(r, 3)
                 if lo_item:
                     disp = lo if len(lo) <= 120 else lo[:117] + "…"
                     lo_item.setText(disp)

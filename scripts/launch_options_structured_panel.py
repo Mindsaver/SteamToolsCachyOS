@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QFormLayout,
@@ -74,6 +75,7 @@ def _add_preset_rows(layout: QVBoxLayout, preset_ids: set[str], storage: dict[st
             continue
         row = QHBoxLayout()
         cb = QCheckBox(meta.label)
+        cb.setTristate(True)
         tip = f"{meta.tooltip}\n({ekey}={eval_on})"
         if meta.risk == "experimental":
             tip += "\n\nExperimental — test per game."
@@ -90,6 +92,9 @@ class StructuredLaunchPanel(QWidget):
         super().__init__(parent)
         self._gpu = gpu
         self._preset_checks: dict[str, QCheckBox] = {}
+        self._preset_base_label: dict[str, str] = {}
+        self._preset_base_tip: dict[str, str] = {}
+        self._global_env_overrides: dict[str, str] = {}
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(10)
@@ -215,6 +220,35 @@ class StructuredLaunchPanel(QWidget):
         il.addStretch(1)
         outer.addWidget(scroll)
 
+    def set_global_env_markers(self, env_overrides: dict[str, str]) -> None:
+        """Annotate env checkboxes when global user_settings.py sets a related key."""
+        self._global_env_overrides = dict(env_overrides)
+        for pid, cb in self._preset_checks.items():
+            if pid not in self._preset_base_label:
+                self._preset_base_label[pid] = cb.text()
+            if pid not in self._preset_base_tip:
+                self._preset_base_tip[pid] = cb.toolTip()
+            base_label = self._preset_base_label[pid]
+            base_tip = self._preset_base_tip[pid]
+            _meta, ekey, val_on = compose.PRESET_BY_ID[pid]
+            gval = env_overrides.get(ekey)
+            cb.setTristate(gval is not None)
+            if gval is None:
+                cb.setText(base_label)
+                cb.setToolTip(base_tip)
+                continue
+            if gval == val_on:
+                marker = " [global ON]"
+                detail = f"Global user_settings.py sets {ekey}={gval}."
+            else:
+                marker = f" [global={gval}]"
+                detail = (
+                    f"Global user_settings.py sets {ekey}={gval} (this toggle expects {val_on}). "
+                    "Local launch options can still override."
+                )
+            cb.setText(base_label + marker)
+            cb.setToolTip(base_tip + "\n\n" + detail)
+
     def _update_gs_enabled(self) -> None:
         on = self._gs_enable.isChecked()
         for w in (
@@ -241,11 +275,22 @@ class StructuredLaunchPanel(QWidget):
         self._gamemode.setChecked(compose.gamemode_active(model))
         self._game_performance.setChecked(compose.game_performance_active(model))
         for pid, cb in self._preset_checks.items():
-            meta, ekey, val_on = compose.PRESET_BY_ID[pid]
-            if pid == "dxvk_hud_fps":
-                cb.setChecked(compose.dxvk_hud_active(model))
+            _meta, ekey, val_on = compose.PRESET_BY_ID[pid]
+            gval = self._global_env_overrides.get(ekey)
+            local = model.env.get(ekey)
+            off = compose.preset_env_off_value(ekey, val_on)
+            if local == val_on:
+                cb.setCheckState(Qt.CheckState.Checked)
+            elif local is not None:
+                if off is not None and local == off:
+                    cb.setCheckState(Qt.CheckState.Unchecked)
+                else:
+                    cb.setCheckState(Qt.CheckState.Unchecked)
             else:
-                cb.setChecked(compose.preset_env_active(model, ekey, val_on))
+                if gval is not None:
+                    cb.setCheckState(Qt.CheckState.PartiallyChecked)
+                else:
+                    cb.setCheckState(Qt.CheckState.Unchecked)
         for flag, cb in self._suffix_checks.items():
             cb.setChecked(compose.suffix_has(model, flag))
 
@@ -284,7 +329,7 @@ class StructuredLaunchPanel(QWidget):
         self._gamemode.toggled.connect(fn)
         self._game_performance.toggled.connect(fn)
         for cb in self._preset_checks.values():
-            cb.toggled.connect(fn)
+            cb.stateChanged.connect(lambda _v, fn=fn: fn())
         for cb in self._suffix_checks.values():
             cb.toggled.connect(fn)
         self._gs_enable.toggled.connect(fn)
@@ -300,11 +345,25 @@ class StructuredLaunchPanel(QWidget):
         compose.set_gamemode(model, self._gamemode.isChecked())
         compose.set_game_performance(model, self._game_performance.isChecked())
         for pid, cb in self._preset_checks.items():
-            meta, ekey, val_on = compose.PRESET_BY_ID[pid]
-            if pid == "dxvk_hud_fps":
-                compose.set_dxvk_hud(model, cb.isChecked())
-            else:
-                compose.set_preset_env(model, ekey, val_on, cb.isChecked())
+            _meta, ekey, val_on = compose.PRESET_BY_ID[pid]
+            state = cb.checkState()
+            has_global = ekey in self._global_env_overrides
+            if state == Qt.CheckState.PartiallyChecked and ekey in self._global_env_overrides:
+                compose.set_preset_env(model, ekey, val_on, False)
+                continue
+            if state == Qt.CheckState.Checked:
+                compose.set_preset_env(model, ekey, val_on, True)
+                continue
+            if not has_global:
+                compose.set_preset_env(model, ekey, val_on, False)
+                continue
+            off = compose.preset_env_off_value(ekey, val_on)
+            if off is None:
+                compose.set_preset_env(model, ekey, val_on, False)
+                continue
+            model.env[ekey] = off
+            if ekey not in model.env_order:
+                model.env_order.append(ekey)
         for flag, cb in self._suffix_checks.items():
             compose.set_suffix_token(model, flag, cb.isChecked())
 

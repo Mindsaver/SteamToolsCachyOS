@@ -67,6 +67,11 @@ class ParseSerializeTests(unittest.TestCase):
         self.assertIn("game-performance", out)
         self.assertIn("%command%", out)
 
+    def test_preset_off_value_inference(self) -> None:
+        self.assertEqual(c.preset_env_off_value("PROTON_LOG", "1"), "0")
+        self.assertEqual(c.preset_env_off_value("SteamDeck", "0"), "1")
+        self.assertEqual(c.preset_env_off_value("DXVK_HUD", "fps"), "0")
+
 
 class GpuVendorTests(unittest.TestCase):
     def test_detect_runs(self) -> None:

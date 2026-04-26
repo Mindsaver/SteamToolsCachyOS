@@ -40,6 +40,7 @@ pyinstaller \
   --hidden-import launch_options_compose \
   --hidden-import launch_options_structured_panel \
   --hidden-import gpu_vendor_detect \
+  --hidden-import steam_compat_context \
   --hidden-import fsr_dll_window \
   --add-data "$SCRIPTS_DIR/steam-game-symlinks.sh:." \
   --add-data "$ROOT_DIR/assets/symlink-steam-logo.png:." \

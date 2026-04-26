@@ -430,6 +430,17 @@ _ENV_PRESETS: list[tuple[TogglePreset, str, str]] = [
     ),
     (
         TogglePreset(
+            id="proton_dxvk_lowlatency",
+            label="DXVK low latency",
+            tooltip="PROTON_DXVK_LOWLATENCY=1 — low-latency DXVK path (tool/version-dependent).",
+            tier=2,
+            risk="experimental",
+        ),
+        "PROTON_DXVK_LOWLATENCY",
+        "1",
+    ),
+    (
+        TogglePreset(
             id="vkbasalt",
             label="vkBasalt",
             tooltip="ENABLE_VKBASALT=1 — requires vkBasalt installed and configured.",
@@ -690,6 +701,18 @@ def set_preset_env(model: LaunchOptionsModel, env_key: str, value_when_on: str, 
         _set_env(model, env_key, value_when_on)
     else:
         _del_env(model, env_key)
+
+
+def preset_env_off_value(env_key: str, value_when_on: str) -> str | None:
+    """Best-effort OFF value used when user explicitly picks Disable."""
+    v = value_when_on.strip().lower()
+    if v in ("1", "true", "yes", "on"):
+        return "0"
+    if v in ("0", "false", "no", "off"):
+        return "1"
+    if env_key == "DXVK_HUD":
+        return "0"
+    return None
 
 
 def set_mangohud(model: LaunchOptionsModel, on: bool) -> None:
