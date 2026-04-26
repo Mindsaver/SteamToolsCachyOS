@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import ssl
+import subprocess
 import sys
 import tempfile
 import time
@@ -16,7 +17,7 @@ from pathlib import Path
 
 from packaging.version import Version, parse as parse_version
 
-from PySide6.QtCore import QProcess, QThread, Qt, Signal
+from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import QMessageBox, QProgressDialog, QWidget
 
 # Defaults match https://github.com/Mindsaver/SteamToolsCachyOS
@@ -238,19 +239,23 @@ class DownloadInstallThread(QThread):
                     b.chmod(b.stat().st_mode | 0o111)
                 except OSError:
                     pass
-            proc = QProcess()
-            proc.setProgram("/bin/bash")
-            proc.setArguments([str(inst)])
-            proc.setWorkingDirectory(str(ddir))
-            proc.start()
-            if not proc.waitForFinished(-1):
-                self.finished_with_result.emit("install.sh did not complete.")
+            # Do not use QProcess from this QThread — Qt objects must run on the main thread.
+            try:
+                completed = subprocess.run(
+                    ["/bin/bash", str(inst)],
+                    cwd=str(ddir),
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                self.finished_with_result.emit("install.sh timed out after 10 minutes.")
                 return
-            if proc.exitCode() != 0:
-                out = bytes(proc.readAllStandardOutput()).decode(errors="replace")
-                err = bytes(proc.readAllStandardError()).decode(errors="replace")
+            if completed.returncode != 0:
+                out = (completed.stdout or "") + (completed.stderr or "")
                 self.finished_with_result.emit(
-                    f"install.sh failed ({proc.exitCode()})\n{out}\n{err}"[:2000]
+                    f"install.sh failed ({completed.returncode})\n{out}"[:2000]
                 )
                 return
             self.finished_with_result.emit(0)
@@ -304,6 +309,11 @@ def handle_check_thread_result(
     *,
     is_auto: bool,
 ) -> None:
+    # Throttle from when the check finishes (not when queued), so a failed/cancelled
+    # run does not block the next launch for 24h before any network result.
+    if is_auto:
+        write_autocheck_timestamp()
+
     if not isinstance(result, LatestRelease):
         if not is_auto:
             QMessageBox.warning(
@@ -359,17 +369,19 @@ def start_manual_check_for_updates(parent: QWidget) -> None:
 
 
 def maybe_start_automatic_update_check(parent: QWidget) -> None:
-    """Background check (throttled); only when running installed frozen binary."""
+    """Background check (throttled) for the frozen app when we have a release version to compare."""
     if not getattr(sys, "frozen", False):
-        return
-    if install_prefix() is None:
         return
     if auto_update_disabled():
         return
     if should_throttle_autocheck():
         return
-    write_autocheck_timestamp()
     local = read_local_version_string()
+    if not local:
+        return
+    # Local dev builds without a tag: skip noisy API checks (Help → Check still works).
+    if local.startswith("0.0.0+dev"):
+        return
     t = CheckReleaseThread(parent)
     t.finished_with_result.connect(
         lambda r, p=parent, lo=local: handle_check_thread_result(p, r, lo, is_auto=True)
