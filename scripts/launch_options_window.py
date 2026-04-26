@@ -6,7 +6,7 @@ import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import QItemSelectionModel, QSettings, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QShowEvent
+from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QFont, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -34,7 +34,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import gpu_vendor_detect
+import launch_options_compose as compose
 import steam_launch_options_core as core
+from launch_options_structured_panel import StructuredLaunchPanel
 
 
 class LaunchOptionsWindow(QMainWindow):
@@ -59,6 +62,8 @@ class LaunchOptionsWindow(QMainWindow):
         self._batch_preview_rows: list[tuple[int, str, str, str]] = []
         self._batch_preview_valid = False
         self._batch_op_index = 0
+        self._syncing_structured = False
+        self._gpu_info = gpu_vendor_detect.detect_gpu_vendors()
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -174,36 +179,82 @@ class LaunchOptionsWindow(QMainWindow):
         right = QTabWidget()
         self._tabs = right
 
-        # --- Single game tab ---
+        # --- Per-game tab (structured + raw + footer) ---
         single = QWidget()
         sv = QVBoxLayout(single)
+        sv.setSpacing(10)
         self._single_title = QLabel("Click a game in the list (just one).")
         self._single_title.setStyleSheet("font-weight: 600;")
         sv.addWidget(self._single_title)
         self._single_hint = QLabel(
-            'Usually leave this empty. If you know what you are doing, examples look like '
-            '"MANGOHUD=1 %command%" or "PROTON_USE_WINED3D=1 %command%".'
+            "Use the Profile tab for toggles and wrappers. Raw tab is the exact string Steam stores "
+            "(advanced edits stay in sync when possible)."
         )
         self._single_hint.setWordWrap(True)
         self._single_hint.setStyleSheet("color: #aaa; font-size: 12px;")
         sv.addWidget(self._single_hint)
+
+        self._unknown_banner = QLabel("")
+        self._unknown_banner.setWordWrap(True)
+        self._unknown_banner.setVisible(False)
+        self._unknown_banner.setStyleSheet(
+            "background-color: rgba(255, 183, 77, 0.15); color: #ffcc80; padding: 8px 10px; "
+            "border-radius: 8px; border: 1px solid rgba(255, 183, 77, 0.45);"
+        )
+        sv.addWidget(self._unknown_banner)
+
+        inner = QTabWidget()
+        self._structured_panel = StructuredLaunchPanel(self._gpu_info)
+        self._structured_panel.connect_changed(self._on_structured_changed)
+        inner.addTab(self._structured_panel, "Profile")
+
+        raw_tab = QWidget()
+        raw_l = QVBoxLayout(raw_tab)
+        raw_l.addWidget(QLabel("Raw launch options (shell)"))
         self._single_editor = QPlainTextEdit()
         self._single_editor.setPlaceholderText("Optional text Steam adds when starting this game…")
-        self._single_editor.textChanged.connect(self._on_single_text_changed)
-        sv.addWidget(self._single_editor, stretch=1)
+        self._single_editor.textChanged.connect(self._on_raw_or_single_text_changed)
+        raw_l.addWidget(self._single_editor, stretch=1)
+        inner.addTab(raw_tab, "Raw command")
+        sv.addWidget(inner, stretch=1)
+
+        self._raw_debounce = QTimer(self)
+        self._raw_debounce.setSingleShot(True)
+        self._raw_debounce.setInterval(160)
+        self._raw_debounce.timeout.connect(self._sync_structured_from_editor)
+
+        preview_row = QVBoxLayout()
+        preview_lbl = QLabel("Preview")
+        preview_lbl.setStyleSheet("color: #888; font-size: 11px;")
+        preview_row.addWidget(preview_lbl)
+        self._preview_label = QLabel(compose.COMMAND_TOKEN)
+        self._preview_label.setWordWrap(False)
+        self._preview_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        pf = QFont("monospace", 10)
+        self._preview_label.setFont(pf)
+        self._preview_label.setStyleSheet(
+            "background-color: rgba(40, 40, 40, 0.9); color: #c8e6c9; padding: 8px; "
+            "border-radius: 6px; border: 1px solid rgba(120, 120, 120, 0.5);"
+        )
+        self._preview_label.setToolTip("")
+        preview_row.addWidget(self._preview_label)
+
+        foot = QHBoxLayout()
         self._single_count = QLabel("0 characters")
         self._single_count.setStyleSheet("color: #888; font-size: 11px;")
-        sv.addWidget(self._single_count)
-        row = QHBoxLayout()
-        self._single_revert = QPushButton("Put back original text")
+        foot.addWidget(self._single_count)
+        foot.addStretch(1)
+        self._single_revert = QPushButton("Revert")
+        self._single_revert.setToolTip("Restore text from when you selected this game")
         self._single_revert.clicked.connect(self._single_revert_clicked)
         self._single_save = QPushButton("Save for this game")
         self._single_save.clicked.connect(self._single_save_clicked)
-        row.addWidget(self._single_revert)
-        row.addWidget(self._single_save)
-        row.addStretch(1)
-        sv.addLayout(row)
-        right.addTab(single, "One game")
+        foot.addWidget(self._single_revert)
+        foot.addWidget(self._single_save)
+        preview_row.addLayout(foot)
+        sv.addLayout(preview_row)
+
+        right.addTab(single, "Per game")
 
         # --- Batch tab ---
         batch = QWidget()
@@ -222,6 +273,7 @@ class LaunchOptionsWindow(QMainWindow):
                 "Add text at the end",
                 "Find & replace words",
                 "Remove all extra text",
+                "Insert preset at start",
             ]
         )
         self._batch_op.currentIndexChanged.connect(self._on_batch_op_changed)
@@ -264,6 +316,17 @@ class LaunchOptionsWindow(QMainWindow):
         lcl.addWidget(QLabel("Clears the extra text for every selected game (Steam default)."))
         self._batch_stack.addWidget(w_clear)
 
+        w_snip = QWidget()
+        lsn = QVBoxLayout(w_snip)
+        lsn.addWidget(
+            QLabel("Adds a small preset (env vars / mangohud) before each game’s existing text, before %command%.")
+        )
+        self._batch_snippet_combo = QComboBox()
+        for key, frag in compose.BATCH_SNIPPET_CHOICES:
+            self._batch_snippet_combo.addItem(frag.replace(" ", " + ") if " " in frag else frag, key)
+        lsn.addWidget(self._batch_snippet_combo)
+        self._batch_stack.addWidget(w_snip)
+
         bf = QGroupBox("Details")
         bfv = QVBoxLayout(bf)
         bfv.addWidget(self._batch_stack)
@@ -273,6 +336,7 @@ class LaunchOptionsWindow(QMainWindow):
         self._batch_suffix.textChanged.connect(self._invalidate_batch_preview)
         self._batch_find.textChanged.connect(self._invalidate_batch_preview)
         self._batch_replace.textChanged.connect(self._invalidate_batch_preview)
+        self._batch_snippet_combo.currentIndexChanged.connect(self._invalidate_batch_preview)
 
         btn_row = QHBoxLayout()
         self._batch_preview_btn = QPushButton("See what will change")
@@ -538,6 +602,11 @@ class LaunchOptionsWindow(QMainWindow):
             self._detail_baseline = ""
             self._single_revert.setEnabled(False)
             self._single_save.setEnabled(False)
+            self._structured_panel.setEnabled(False)
+            self._syncing_structured = True
+            self._structured_panel.populate_from_model(compose.LaunchOptionsModel())
+            self._syncing_structured = False
+            self._unknown_banner.setVisible(False)
             self._on_single_text_changed()
             self._update_window_dirty_title()
             return
@@ -555,9 +624,15 @@ class LaunchOptionsWindow(QMainWindow):
             self._detail_baseline = ""
             self._single_revert.setEnabled(False)
             self._single_save.setEnabled(False)
+            self._structured_panel.setEnabled(False)
+            self._syncing_structured = True
+            self._structured_panel.populate_from_model(compose.LaunchOptionsModel())
+            self._syncing_structured = False
+            self._unknown_banner.setVisible(False)
             self._on_single_text_changed()
             self._update_window_dirty_title()
             return
+        self._structured_panel.setEnabled(True)
         name = ""
         for r in range(self._table.rowCount()):
             it = self._table.item(r, 0)
@@ -575,6 +650,7 @@ class LaunchOptionsWindow(QMainWindow):
         self._single_revert.setEnabled(True)
         self._single_save.setEnabled(bool(aid) and bool(self._account_id))
         self._on_single_text_changed()
+        self._sync_structured_from_editor()
         self._update_window_dirty_title()
 
     def _single_is_dirty(self) -> bool:
@@ -582,9 +658,66 @@ class LaunchOptionsWindow(QMainWindow):
             return False
         return self._single_editor.toPlainText() != self._detail_baseline
 
+    def _on_raw_or_single_text_changed(self) -> None:
+        txt = self._single_editor.toPlainText()
+        disp = txt.strip() if txt.strip() else compose.COMMAND_TOKEN
+        self._preview_label.setText(disp)
+        self._preview_label.setToolTip(txt if txt else "(empty)")
+        self._single_count.setText(f"{len(txt)} characters")
+        self._update_window_dirty_title()
+        if not self._syncing_structured:
+            self._raw_debounce.start()
+
     def _on_single_text_changed(self) -> None:
-        n = len(self._single_editor.toPlainText())
-        self._single_count.setText(f"{n} characters")
+        txt = self._single_editor.toPlainText()
+        disp = txt.strip() if txt.strip() else compose.COMMAND_TOKEN
+        self._preview_label.setText(disp)
+        self._preview_label.setToolTip(txt if txt else "(empty)")
+        self._single_count.setText(f"{len(txt)} characters")
+        self._update_window_dirty_title()
+
+    def _sync_structured_from_editor(self) -> None:
+        if self._syncing_structured:
+            return
+        self._syncing_structured = True
+        try:
+            txt = self._single_editor.toPlainText()
+            m, _ = compose.parse_launch_options(txt)
+            self._structured_panel.populate_from_model(m)
+            self._update_unknown_banner(m)
+        finally:
+            self._syncing_structured = False
+
+    def _update_unknown_banner(self, m: compose.LaunchOptionsModel) -> None:
+        if compose.has_unrepresented_tokens(m):
+            self._unknown_banner.setText(
+                "Some prefix tokens are not represented as toggles (custom wrappers, typos, etc.) — see Raw."
+            )
+            self._unknown_banner.setVisible(True)
+        else:
+            self._unknown_banner.setVisible(False)
+
+    def _on_structured_changed(self) -> None:
+        if self._syncing_structured or self._detail_appid is None:
+            return
+        if not self._structured_panel.isEnabled():
+            return
+        txt = self._single_editor.toPlainText()
+        m, _ = compose.parse_launch_options(txt)
+        self._structured_panel.apply_to_model(m)
+        new_txt = compose.serialize_launch_options(m)
+        if new_txt != txt:
+            self._syncing_structured = True
+            self._single_editor.blockSignals(True)
+            self._single_editor.setPlainText(new_txt)
+            self._single_editor.blockSignals(False)
+            self._syncing_structured = False
+        final = self._single_editor.toPlainText()
+        m2, _ = compose.parse_launch_options(final)
+        self._update_unknown_banner(m2)
+        self._preview_label.setText(final.strip() or compose.COMMAND_TOKEN)
+        self._preview_label.setToolTip(final)
+        self._single_count.setText(f"{len(final)} characters")
         self._update_window_dirty_title()
 
     def _update_window_dirty_title(self) -> None:
@@ -599,6 +732,7 @@ class LaunchOptionsWindow(QMainWindow):
         self._single_editor.setPlainText(self._detail_baseline)
         self._single_editor.blockSignals(False)
         self._on_single_text_changed()
+        self._sync_structured_from_editor()
 
     def _confirm_steam_running(self) -> bool:
         if not core.is_steam_process_running():
@@ -775,7 +909,7 @@ class LaunchOptionsWindow(QMainWindow):
         elif n == 1:
             self._batch_info.setText(
                 "Only one game is selected. That’s fine — you can still use this tab — "
-                "or use “One game” for a simpler view."
+                "or use “Per game” for a simpler view."
             )
         else:
             self._batch_info.setText(
@@ -783,7 +917,7 @@ class LaunchOptionsWindow(QMainWindow):
             )
 
     def _batch_op_name(self) -> str:
-        names = ["set", "prefix", "suffix", "replace", "clear"]
+        names = ["set", "prefix", "suffix", "replace", "clear", "snippet"]
         return names[self._batch_op.currentIndex()]
 
     def _batch_preview_clicked(self) -> None:
@@ -807,15 +941,24 @@ class LaunchOptionsWindow(QMainWindow):
         rows: list[tuple[int, str, str, str]] = []
         for aid in ids:
             cur = core.get_launch_options(self._vdf_root, aid)
-            new = core.transform_launch_options(
-                cur,
-                op,
-                set_value=self._batch_set_text.toPlainText(),
-                prefix=self._batch_prefix.text(),
-                suffix=self._batch_suffix.text(),
-                find=self._batch_find.text(),
-                replace_with=self._batch_replace.text(),
-            )
+            if op == "snippet":
+                key = self._batch_snippet_combo.currentData()
+                frag = ""
+                for k, f in compose.BATCH_SNIPPET_CHOICES:
+                    if k == key:
+                        frag = f
+                        break
+                new = compose.merge_snippet_prefix(cur, frag)
+            else:
+                new = core.transform_launch_options(
+                    cur,
+                    op,
+                    set_value=self._batch_set_text.toPlainText(),
+                    prefix=self._batch_prefix.text(),
+                    suffix=self._batch_suffix.text(),
+                    find=self._batch_find.text(),
+                    replace_with=self._batch_replace.text(),
+                )
             rows.append((aid, self._game_name(aid), cur, new))
         self._batch_preview_rows = rows
         self._batch_preview_table.setRowCount(0)
