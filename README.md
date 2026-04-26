@@ -133,6 +133,14 @@ Includes `[tests/test_launch_options_compose.py](tests/test_launch_options_compo
 
 ---
 
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+Bundled and runtime dependencies (for example **PySide6** / Qt, **certifi**, **packaging**, **vdf**, and the **PyInstaller** bootloader in release binaries) remain under their respective licenses; see each package’s metadata or upstream project.
+
+---
+
 ## Links
 
 - **GitHub**: [Mindsaver/SteamToolsCachyOS](https://github.com/Mindsaver/SteamToolsCachyOS)

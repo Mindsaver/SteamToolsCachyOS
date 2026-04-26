@@ -27,6 +27,25 @@ RELEASE_ASSET_NAME = "SteamToolsCachyOS-Linux-x86_64.zip"
 AUTO_CHECK_INTERVAL_S = 24 * 60 * 60
 CACHE_SUBDIR = "SteamToolsCachyOS"
 CACHE_STAMP = "last_update_check"
+# Strong refs on the main window until each worker QThread finishes (avoid Python GC mid-run).
+_UPDATE_THREADS_ATTR = "_steamtools_update_active_threads"
+
+
+def _retain_worker_thread(owner: QWidget, thread: QThread) -> None:
+    """Keep a Python reference to ``thread`` until it emits ``finished``."""
+    bucket: list[QThread] = getattr(owner, _UPDATE_THREADS_ATTR, [])
+    if not bucket:
+        setattr(owner, _UPDATE_THREADS_ATTR, bucket)
+    bucket.append(thread)
+
+    def _on_finished() -> None:
+        try:
+            bucket.remove(thread)
+        except ValueError:
+            pass
+        thread.deleteLater()
+
+    thread.finished.connect(_on_finished)
 
 
 def _https_ssl_context() -> ssl.SSLContext:
@@ -214,8 +233,8 @@ class CheckReleaseThread(QThread):
 class DownloadInstallThread(QThread):
     finished_with_result = Signal(object)  # int 0 success, or str error
 
-    def __init__(self, latest: LatestRelease) -> None:
-        super().__init__()
+    def __init__(self, latest: LatestRelease, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
         self._latest = latest
 
     def run(self) -> None:  # noqa: D102
@@ -297,7 +316,8 @@ def _start_download_install(parent: QWidget, latest: LatestRelease) -> None:
     progress.setCancelButton(None)
     progress.setMinimumDuration(0)
     progress.show()
-    t = DownloadInstallThread(latest)
+    t = DownloadInstallThread(latest, parent)
+    _retain_worker_thread(parent, t)
     t.finished_with_result.connect(lambda x, p=parent, pr=progress: _finish_download(p, pr, x))
     t.start()
 
@@ -362,6 +382,7 @@ def handle_check_thread_result(
 def start_manual_check_for_updates(parent: QWidget) -> None:
     local = read_local_version_string()
     t = CheckReleaseThread(parent)
+    _retain_worker_thread(parent, t)
     t.finished_with_result.connect(
         lambda r, p=parent, lo=local: handle_check_thread_result(p, r, lo, is_auto=False)
     )
@@ -383,6 +404,7 @@ def maybe_start_automatic_update_check(parent: QWidget) -> None:
     if local.startswith("0.0.0+dev"):
         return
     t = CheckReleaseThread(parent)
+    _retain_worker_thread(parent, t)
     t.finished_with_result.connect(
         lambda r, p=parent, lo=local: handle_check_thread_result(p, r, lo, is_auto=True)
     )
