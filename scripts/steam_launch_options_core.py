@@ -280,6 +280,57 @@ def is_steam_process_running() -> bool:
         return False
 
 
+def try_quit_steam(*, wait_s: float = 18.0) -> tuple[bool, str]:
+    """
+    Try to exit Steam: `steam -shutdown`, wait, then SIGTERM / SIGKILL on the `steam` process.
+    Returns (True, message) if no `steam` process remains for this user, else (False, message).
+    """
+    if not is_steam_process_running():
+        return True, "Steam is already closed."
+
+    try:
+        subprocess.Popen(
+            ["steam", "-shutdown"],
+            env=os.environ.copy(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except FileNotFoundError:
+        pass
+
+    deadline = time.monotonic() + wait_s
+    while time.monotonic() < deadline:
+        time.sleep(0.4)
+        if not is_steam_process_running():
+            return True, "Steam closed cleanly."
+
+    for sig in ("-TERM", "-9"):
+        try:
+            subprocess.run(
+                ["pkill", sig, "-x", "steam"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            try:
+                flag = "-TERM" if sig == "-TERM" else "-9"
+                subprocess.run(["killall", flag, "steam"], capture_output=True, timeout=10)
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                pass
+        time.sleep(0.8)
+        if not is_steam_process_running():
+            return True, "Steam was stopped." if sig == "-TERM" else "Steam was force-closed."
+
+    if not is_steam_process_running():
+        return True, "Steam closed."
+    return (
+        False,
+        "Steam is still running. Close it from the Steam window or tray, then try again.",
+    )
+
+
 def latest_backup(path: Path) -> Path | None:
     parent = path.parent
     pattern = f"{path.name}.bak.*"

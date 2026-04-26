@@ -20,6 +20,7 @@ for arg in "$@"; do
       echo "Args:"
       echo "  --amd-dll=/path/to/amdxcffx64.dll  Copy DLL to each detected game system32 path"
       echo "  --mode=all|folders|dll            all=both, folders=links only (ignores --amd-dll), dll=DLL copy only"
+      echo "Each game folder also gets \"Start in Steam.desktop\" (opens steam://rungameid/<AppID>)."
       exit 0
       ;;
   esac
@@ -89,6 +90,30 @@ sanitize_dirname() {
   s="${s##[[:space:]]}"
   s="${s%%[[:space:]]}"
   printf '%s' "$s"
+}
+
+# Desktop launcher: double-click / open from file manager to start the game in Steam.
+write_start_in_steam_desktop() {
+  local out="$1"
+  local appid="$2"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '[dry-run] would write %q\n' "$out"
+    return
+  fi
+  cat >"$out" <<DESK
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Start in Steam
+Comment=Launch this library game in the Steam client (AppID ${appid}).
+Exec=steam steam://rungameid/${appid}
+TryExec=steam
+Icon=steam
+Terminal=false
+Categories=Game;
+Keywords=Steam;Game;Symlink-Steam;
+DESK
+  chmod +x "$out"
 }
 
 skip_heuristic_non_game() {
@@ -238,6 +263,8 @@ for job in "${jobs[@]}"; do
         run rm -f "$sys32_link"
       fi
     fi
+
+    write_start_in_steam_desktop "$game_dir/Start in Steam.desktop" "$appid"
   fi
 
   if [[ "$MODE" != "folders" && -n "$AMD_DLL_PATH" && -n "$compat_sys32" ]]; then

@@ -65,6 +65,24 @@ class LaunchOptionsWindow(QMainWindow):
         outer = QVBoxLayout(central)
         outer.setContentsMargins(8, 8, 8, 8)
 
+        steam_banner = QWidget()
+        steam_banner.setStyleSheet(
+            "QWidget { background-color: rgba(80, 80, 80, 0.25); border-radius: 8px; "
+            "border: 1px solid rgba(120, 120, 120, 0.5); padding: 2px; }"
+        )
+        steam_lay = QHBoxLayout(steam_banner)
+        steam_lay.setContentsMargins(10, 8, 10, 8)
+        steam_lay.setSpacing(10)
+        self._status_steam = QLabel("")
+        self._kill_steam_btn = QPushButton("Quit Steam")
+        self._kill_steam_btn.setToolTip(
+            "Tries a normal Steam exit first, then stops the Steam process if it is still running."
+        )
+        self._kill_steam_btn.clicked.connect(self._kill_steam_clicked)
+        steam_lay.addWidget(self._status_steam, stretch=1)
+        steam_lay.addWidget(self._kill_steam_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+        outer.addWidget(steam_banner)
+
         tb = QToolBar()
         tb.setMovable(False)
         self.addToolBar(tb)
@@ -289,9 +307,7 @@ class LaunchOptionsWindow(QMainWindow):
         sb = QStatusBar()
         self.setStatusBar(sb)
         self._status_path = QLabel("")
-        self._status_steam = QLabel("")
         sb.addWidget(self._status_path, stretch=1)
-        sb.addPermanentWidget(self._status_steam)
 
         self._steam_timer = QTimer(self)
         self._steam_timer.setInterval(3000)
@@ -587,15 +603,36 @@ class LaunchOptionsWindow(QMainWindow):
     def _confirm_steam_running(self) -> bool:
         if not core.is_steam_process_running():
             return True
-        r = QMessageBox.warning(
-            self,
-            self._app_name,
-            "Steam is open right now. Saving might still work, but closing Steam first is the "
-            "safest way to avoid surprises.\n\nSave anyway?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle(self._app_name)
+        msg.setText(
+            "Steam is still running. Saving works best once Steam is fully closed.\n\n"
+            "What would you like to do?"
         )
-        return r == QMessageBox.StandardButton.Yes
+        btn_quit = msg.addButton("Quit Steam, then save", QMessageBox.ButtonRole.ActionRole)
+        btn_save = msg.addButton("Save anyway", QMessageBox.ButtonRole.AcceptRole)
+        btn_cancel = msg.addButton(QMessageBox.StandardButton.Cancel)
+        msg.setDefaultButton(btn_cancel)
+        msg.exec()
+        clicked = msg.clickedButton()
+        if clicked in (None, btn_cancel):
+            return False
+        if clicked == btn_save:
+            return True
+        if clicked == btn_quit:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            try:
+                ok, text = core.try_quit_steam()
+            finally:
+                QApplication.restoreOverrideCursor()
+            self._update_steam_warning()
+            if ok:
+                self.statusBar().showMessage(text, 6000)
+                return True
+            QMessageBox.warning(self, self._app_name, text)
+            return False
+        return False
 
     def _single_save_clicked(self) -> None:
         if self._detail_appid is None or not self._account_id:
@@ -681,13 +718,43 @@ class LaunchOptionsWindow(QMainWindow):
     def _open_help(self) -> None:
         webbrowser.open("https://help.steampowered.com/en/faqs/view/7D01-D-2F22-EA8F")
 
+    def _kill_steam_clicked(self) -> None:
+        if not core.is_steam_process_running():
+            self._update_steam_warning()
+            return
+        if (
+            QMessageBox.question(
+                self,
+                "Close Steam?",
+                "This will try to shut Steam down (normal exit first, then force if needed).\n"
+                "Unsaved progress inside games could be lost.\n\n"
+                "Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            ok, text = core.try_quit_steam()
+        finally:
+            QApplication.restoreOverrideCursor()
+        self._update_steam_warning()
+        if ok:
+            self.statusBar().showMessage(text, 8000)
+        else:
+            QMessageBox.warning(self, self._app_name, text)
+
     def _update_steam_warning(self) -> None:
         if core.is_steam_process_running():
-            self._status_steam.setText("Steam is open — closing it before saving is safest")
+            self._status_steam.setText("Steam is open — close it before saving for fewest surprises")
             self._status_steam.setStyleSheet("color: #ffb74d;")
+            self._kill_steam_btn.setVisible(True)
         else:
             self._status_steam.setText("Steam looks closed — good time to save")
             self._status_steam.setStyleSheet("color: #81c784;")
+            self._kill_steam_btn.setVisible(False)
 
     def _on_batch_op_changed(self, index: int) -> None:
         self._batch_op_index = index

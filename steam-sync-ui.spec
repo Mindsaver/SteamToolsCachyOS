@@ -11,6 +11,7 @@ a = Analysis(
     ],
     hiddenimports=[
         'dll_ffx_versions',
+        'fsr_dll_window',
         'vdf',
         'steam_launch_options_core',
         'launch_options_window',

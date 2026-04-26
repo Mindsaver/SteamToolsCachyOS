@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Install Symlink-Steam (terminal for .run)
+Comment=Runs the .run file inside your default terminal (KDE honors Terminal=true here).
+Path=.
+Terminal=true
+Exec=./Symlink-Steam-Linux-x86_64.run
+TryExec=./Symlink-Steam-Linux-x86_64.run
+Icon=application-x-executable
+Categories=Utility;

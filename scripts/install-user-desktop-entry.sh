@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Install a user .desktop entry so GNOME/KDE/Wayland shells can show the app icon
-# (client-side setWindowIcon is often ignored there).
+# Dev helper: register a .desktop entry only (Exec points at the bundle or repo paths).
+# For releases and a proper ~/.local install (and updates), use install.sh from dist/ instead.
 #
 # Works from:
 #   - A release folder: this script next to Symlink-Steam + symlink-steam-logo.png

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Install Symlink-Steam (Konsole / other terminals)
+Comment=Opens a real terminal and runs the .run installer. Use if double-clicking the .run does nothing.
+Path=.
+Terminal=false
+Exec=./Symlink-Steam-Linux-install-terminal.sh
+Icon=application-x-executable
+Categories=Utility;
