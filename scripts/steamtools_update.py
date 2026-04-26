@@ -12,19 +12,27 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from packaging.version import Version, parse as parse_version
 
-from PySide6.QtCore import QThread, Qt, Signal
-from PySide6.QtWidgets import QMessageBox, QProgressDialog, QWidget
+from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot, QTimer
+from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog, QWidget
 
 # Defaults match https://github.com/Mindsaver/SteamToolsCachyOS
 DEFAULT_GITHUB_OWNER = "Mindsaver"
 DEFAULT_GITHUB_REPO = "SteamToolsCachyOS"
 RELEASE_ASSET_NAME = "SteamToolsCachyOS-Linux-x86_64.zip"
-AUTO_CHECK_INTERVAL_S = 24 * 60 * 60
+# When True (default), release-looking installs throttle startup GitHub checks (see last_update_check).
+# Local/direct builds (0.0.0+dev… or any +dev in RELEASE_VERSION) skip throttling unless
+# STEAMTOOLS_AUTO_CHECK_THROTTLE=1. STEAMTOOLS_AUTO_CHECK_THROTTLE=0 turns throttling off for releases too.
+_AUTO_UPDATE_CHECK_THROTTLE_ENABLED = True
+# Default minimum gap between automatic /releases/latest checks (override with STEAMTOOLS_AUTO_CHECK_INTERVAL_HOURS).
+_DEFAULT_AUTO_CHECK_INTERVAL_S = 60 * 60
+_MIN_AUTO_CHECK_INTERVAL_S = 5 * 60
+_MAX_AUTO_CHECK_INTERVAL_S = 14 * 24 * 60 * 60
 CACHE_SUBDIR = "SteamToolsCachyOS"
 CACHE_STAMP = "last_update_check"
 # Strong refs on the main window until each worker QThread finishes (avoid Python GC mid-run).
@@ -46,6 +54,60 @@ def _retain_worker_thread(owner: QWidget, thread: QThread) -> None:
         thread.deleteLater()
 
     thread.finished.connect(_on_finished)
+
+
+class UpdateResultSink(QObject):
+    """Lives on the GUI thread. Call ``post()`` from any thread (e.g. ``QThread.run``) to run
+    ``consumer`` on the GUI thread — the reliable pattern vs. connecting a worker signal to a Python callable.
+    """
+
+    payload = Signal(object)
+
+    def __init__(self, parent: QWidget, consumer: Callable[[object], None]) -> None:
+        super().__init__(parent)
+        self._consumer = consumer
+        self.payload.connect(self._deliver, Qt.ConnectionType.QueuedConnection)
+
+    @Slot(object)
+    def _deliver(self, obj: object) -> None:
+        self._consumer(obj)
+
+    def post(self, obj: object) -> None:
+        self.payload.emit(obj)
+
+
+def _set_startup_check_status(parent: QWidget, text: str | None) -> None:
+    label = getattr(parent, "status_label", None)
+    if label is None or text is None:
+        return
+    setattr(parent, "_steamtools_startup_check_status", True)
+    label.setText(text)
+
+
+def _clear_startup_check_status(parent: QWidget) -> None:
+    """Clear the in-flight \"Checking…\" state without clobbering a follow-up status message."""
+    if not getattr(parent, "_steamtools_startup_check_status", False):
+        return
+    setattr(parent, "_steamtools_startup_check_status", False)
+    label = getattr(parent, "status_label", None)
+    if label is not None and label.text() == "Checking for updates…":
+        label.setText("Ready")
+
+
+def _flash_status(parent: QWidget, text: str, ms: int = 6000) -> None:
+    label = getattr(parent, "status_label", None)
+    if label is None:
+        return
+    label.setText(text)
+    QTimer.singleShot(ms, lambda: _restore_status_if_idle(parent))
+
+
+def _restore_status_if_idle(parent: QWidget) -> None:
+    if getattr(parent, "_steamtools_startup_check_status", False):
+        return
+    label = getattr(parent, "status_label", None)
+    if label is not None:
+        label.setText("Ready")
 
 
 def _https_ssl_context() -> ssl.SSLContext:
@@ -99,24 +161,61 @@ def bundle_prefix() -> Path:
     return Path(__file__).resolve().parent
 
 
+def _version_search_roots() -> list[Path]:
+    """Ordered unique dirs that may contain RELEASE_VERSION / VERSION (install layout varies)."""
+    roots: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(p: Path | None) -> None:
+        if p is None:
+            return
+        try:
+            r = p.resolve()
+        except OSError:
+            r = p
+        if r in seen:
+            return
+        seen.add(r)
+        roots.append(r)
+
+    add(install_prefix())
+    add(bundle_prefix())
+    if getattr(sys, "frozen", False):
+        xdg = os.environ.get("XDG_DATA_HOME", "").strip()
+        if xdg:
+            add(Path(xdg) / "SteamToolsCachyOS")
+        add(Path.home() / ".local/share/SteamToolsCachyOS")
+    return roots
+
+
 def read_local_version_string() -> str | None:
-    pfx = install_prefix() or bundle_prefix()
-    rel = pfx / "RELEASE_VERSION"
-    if rel.is_file():
-        s = rel.read_text(encoding="utf-8", errors="replace").strip()
-        if s:
-            return s.splitlines()[0].strip()
-    vfile = pfx / "VERSION"
-    if vfile.is_file():
-        line = vfile.read_text(encoding="utf-8", errors="replace").strip().splitlines()
-        if line:
-            return line[0].strip()
+    for pfx in _version_search_roots():
+        rel = pfx / "RELEASE_VERSION"
+        if rel.is_file():
+            s = rel.read_text(encoding="utf-8", errors="replace").strip()
+            if s:
+                return s.splitlines()[0].strip()
+        vfile = pfx / "VERSION"
+        if vfile.is_file():
+            line = vfile.read_text(encoding="utf-8", errors="replace").strip().splitlines()
+            if line:
+                return line[0].strip()
     return None
 
 
 def auto_update_disabled() -> bool:
     v = (os.environ.get("STEAMTOOLS_NO_AUTO_UPDATE") or "").strip().lower()
     return v in ("1", "true", "yes", "on")
+
+
+def _auto_update_when_unfrozen() -> bool:
+    """Allow startup check while running from source (not PyInstaller) for QA."""
+    v = (os.environ.get("STEAMTOOLS_AUTO_UPDATE_WHEN_UNFROZEN") or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
+def _should_run_startup_release_check() -> bool:
+    return bool(getattr(sys, "frozen", False) or _auto_update_when_unfrozen())
 
 
 def _cache_stamp_path() -> Path:
@@ -126,19 +225,71 @@ def _cache_stamp_path() -> Path:
     return cache / CACHE_SUBDIR / CACHE_STAMP
 
 
+def _local_build_version_skips_release_throttle() -> bool:
+    """True for typical ``./build`` trees (``0.0.0+dev.*`` / ``+dev`` in semver) so GitHub is checked every launch."""
+    s = read_local_version_string()
+    if not s:
+        return True
+    line = s.strip().splitlines()[0].strip().lower()
+    if "+dev" in line:
+        return True
+    if line.startswith("0.0.0+"):
+        return True
+    return False
+
+
+def _autocheck_throttle_active() -> bool:
+    """Rate-limit startup GitHub release checks using ~/.cache/.../last_update_check."""
+    v = (os.environ.get("STEAMTOOLS_AUTO_CHECK_THROTTLE") or "").strip().lower()
+    if v in ("1", "true", "yes", "on"):
+        return True
+    if v in ("0", "false", "no", "off"):
+        return False
+    if not _AUTO_UPDATE_CHECK_THROTTLE_ENABLED:
+        return False
+    if _local_build_version_skips_release_throttle():
+        return False
+    return True
+
+
+def autocheck_interval_seconds() -> int:
+    """Minimum time between automatic startup checks.
+
+    Override with ``STEAMTOOLS_AUTO_CHECK_INTERVAL_HOURS`` (float, e.g. ``0.25`` for 15 minutes).
+    Values are clamped so a typo cannot hammer GitHub every few seconds.
+    """
+    raw = (os.environ.get("STEAMTOOLS_AUTO_CHECK_INTERVAL_HOURS") or "").strip()
+    if not raw:
+        return _DEFAULT_AUTO_CHECK_INTERVAL_S
+    try:
+        hours = float(raw)
+    except ValueError:
+        return _DEFAULT_AUTO_CHECK_INTERVAL_S
+    if hours <= 0:
+        return _DEFAULT_AUTO_CHECK_INTERVAL_S
+    secs = int(hours * 3600.0)
+    return max(_MIN_AUTO_CHECK_INTERVAL_S, min(secs, _MAX_AUTO_CHECK_INTERVAL_S))
+
+
 def should_throttle_autocheck() -> bool:
-    """If True, skip the automatic background check (24h) — manual 'Check for updates' ignores this."""
+    """If True, skip the automatic background check — manual 'Check for updates' ignores this."""
+    if not _autocheck_throttle_active():
+        return False
+    if os.environ.get("STEAMTOOLS_FORCE_UPDATE_CHECK", "").strip().lower() in ("1", "true", "yes", "on"):
+        return False
     p = _cache_stamp_path()
     if not p.is_file():
         return False
     try:
-        t = float(p.read_text(encoding="utf-8").strip())
+        t = float(p.read_text(encoding="utf-8", errors="replace").strip())
     except (OSError, ValueError):
         return False
-    return (time.time() - t) < AUTO_CHECK_INTERVAL_S
+    return (time.time() - t) < autocheck_interval_seconds()
 
 
 def write_autocheck_timestamp() -> None:
+    if not _autocheck_throttle_active():
+        return
     p = _cache_stamp_path()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -221,13 +372,22 @@ def extract_zip_and_find_install(zip_path: Path) -> Path:
 
 
 class CheckReleaseThread(QThread):
-    finished_with_result = Signal(object)  # LatestRelease or BaseException
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        result_sink: UpdateResultSink,
+    ) -> None:
+        super().__init__(parent)
+        self._result_sink = result_sink
 
     def run(self) -> None:  # noqa: D102
         try:
-            self.finished_with_result.emit(fetch_latest_release())
+            self._result_sink.post(fetch_latest_release())
         except (OSError, ValueError, urllib.error.URLError, RuntimeError, json.JSONDecodeError) as e:
-            self.finished_with_result.emit(e)
+            self._result_sink.post(e)
+        except BaseException as e:
+            self._result_sink.post(e)
 
 
 class DownloadInstallThread(QThread):
@@ -292,14 +452,87 @@ class DownloadInstallThread(QThread):
                     pass
 
 
+def _restart_application(parent: QWidget) -> None:
+    """Start a new instance of this app and exit (loads newly installed binary on disk)."""
+    # Resolve the real binary (e.g. ~/.local/bin/SteamToolsCachyOS → …/SteamToolsCachyOS).
+    exe_path = Path(sys.executable).expanduser().resolve()
+    exe = str(exe_path)
+    if not exe_path.is_file():
+        QMessageBox.critical(
+            parent,
+            "Restart failed",
+            f"Could not find the application executable:\n{exe}",
+        )
+        return
+    argv = [exe, *list(sys.argv[1:])]
+    workdir = str(Path.home())
+    app = QApplication.instance()
+
+    def _defer_quit() -> None:
+        if app is not None:
+            app.quit()
+
+    def _spawn_subprocess() -> bool:
+        try:
+            kwargs: dict = dict(
+                args=argv,
+                cwd=workdir,
+                executable=exe,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                env=os.environ.copy(),
+            )
+            if sys.platform != "win32":
+                kwargs["close_fds"] = True
+            subprocess.Popen(**kwargs)
+            return True
+        except OSError:
+            return False
+
+    def _spawn_posix_spawnv() -> bool:
+        if not hasattr(os, "spawnv") or not hasattr(os, "P_NOWAIT"):
+            return False
+        try:
+            pid = os.spawnv(os.P_NOWAIT, exe, argv)
+            return pid > 0
+        except OSError:
+            return False
+
+    # Avoid QProcess.startDetached: some PySide6 / Qt builds report success without spawning a
+    # process, which closes the app and leaves nothing running.
+
+    if not _spawn_subprocess() and not _spawn_posix_spawnv():
+        QMessageBox.critical(
+            parent,
+            "Restart failed",
+            "Could not restart automatically. Please start SteamToolsCachyOS from your menu or terminal.",
+        )
+        return
+
+    # Let the child finish fork/exec before this process tears down Qt / Wayland (otherwise the
+    # new instance can fail to show a window or exit immediately on some desktops).
+    QTimer.singleShot(500, _defer_quit)
+
+
 def _finish_download(parent: QWidget, progress: QProgressDialog, x: object) -> None:
     progress.close()
     if x == 0:
-        QMessageBox.information(
-            parent,
-            "Update installed",
-            "The new version was installed. Please restart SteamToolsCachyOS.",
+        mb = QMessageBox(parent)
+        mb.setWindowTitle("Update installed")
+        mb.setIcon(QMessageBox.Icon.Information)
+        mb.setText("The new version was installed.")
+        mb.setInformativeText(
+            "Restart now to load the new build, or choose Later to keep this session "
+            "(you will still be running the previous build until you quit)."
         )
+        restart_btn = mb.addButton("Restart now", QMessageBox.ButtonRole.AcceptRole)
+        mb.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        mb.setDefaultButton(restart_btn)
+        mb.exec()
+        if mb.clickedButton() == restart_btn:
+            _restart_application(parent)
     elif isinstance(x, str):
         QMessageBox.critical(
             parent,
@@ -318,8 +551,18 @@ def _start_download_install(parent: QWidget, latest: LatestRelease) -> None:
     progress.show()
     t = DownloadInstallThread(latest, parent)
     _retain_worker_thread(parent, t)
-    t.finished_with_result.connect(lambda x, p=parent, pr=progress: _finish_download(p, pr, x))
+    def _slot_dl(x: object) -> None:
+        _finish_download(parent, progress, x)
+
+    t.finished_with_result.connect(_slot_dl, Qt.ConnectionType.QueuedConnection)
     t.start()
+
+
+def _normalize_semver_token(s: str) -> str:
+    t = (s or "").strip().splitlines()[0].strip() if s else ""
+    if len(t) > 1 and t[0] in "vV":
+        t = t[1:]
+    return t
 
 
 def handle_check_thread_result(
@@ -329,11 +572,8 @@ def handle_check_thread_result(
     *,
     is_auto: bool,
 ) -> None:
-    # Throttle from when the check finishes (not when queued), so a failed/cancelled
-    # run does not block the next launch for 24h before any network result.
     if is_auto:
-        write_autocheck_timestamp()
-
+        _clear_startup_check_status(parent)
     if not isinstance(result, LatestRelease):
         if not is_auto:
             QMessageBox.warning(
@@ -341,17 +581,30 @@ def handle_check_thread_result(
                 "Update check",
                 f"Could not check for updates:\n{result!s}",
             )
+        else:
+            _flash_status(parent, f"Update check failed: {result!s}"[:160], 9000)
         return
-    if not local_str:
+    effective = (local_str or "").strip() or read_local_version_string() or ""
+    effective = _normalize_semver_token(effective)
+    if not effective:
         if not is_auto:
             QMessageBox.information(
                 parent,
                 "Update check",
                 "Could not read a local version (install from a release or use dist/ with RELEASE_VERSION).",
             )
+        else:
+            _flash_status(
+                parent,
+                "No release version next to the app (missing RELEASE_VERSION). Help → Check for updates.",
+                10000,
+            )
         return
+    # Throttle only once we can compare (avoid 24h silence when local version was unreadable).
+    if is_auto:
+        write_autocheck_timestamp()
     try:
-        local_v = parse_version(local_str)
+        local_v = parse_version(effective)
         if not isinstance(local_v, Version):
             local_v = parse_version("0")
     except ValueError:
@@ -361,14 +614,16 @@ def handle_check_thread_result(
             QMessageBox.information(
                 parent,
                 "Up to date",
-                f"You are on the latest version ({local_str}).",
+                f"You are on the latest version ({effective}).",
             )
+        else:
+            _flash_status(parent, f"Up to date ({effective}).", 5000)
         return
     r = QMessageBox.question(
         parent,
         "Update available",
         f"A newer release is available:\n\n"
-        f"  Installed: {local_str}\n"
+        f"  Installed: {effective}\n"
         f"  Latest:    {result.version_str} ({result.tag_name})\n\n"
         f"Download and install now? (You will need to restart the app.)",
         QMessageBox.Yes | QMessageBox.No,
@@ -381,31 +636,38 @@ def handle_check_thread_result(
 
 def start_manual_check_for_updates(parent: QWidget) -> None:
     local = read_local_version_string()
-    t = CheckReleaseThread(parent)
+
+    def consumer(result: object) -> None:
+        handle_check_thread_result(parent, result, local, is_auto=False)
+
+    sink = UpdateResultSink(parent, consumer)
+    t = CheckReleaseThread(parent, result_sink=sink)
     _retain_worker_thread(parent, t)
-    t.finished_with_result.connect(
-        lambda r, p=parent, lo=local: handle_check_thread_result(p, r, lo, is_auto=False)
-    )
     t.start()
 
 
 def maybe_start_automatic_update_check(parent: QWidget) -> None:
-    """Background check (throttled) for the frozen app when we have a release version to compare."""
-    if not getattr(sys, "frozen", False):
+    """Startup background check: PyInstaller build, or dev with STEAMTOOLS_AUTO_UPDATE_WHEN_UNFROZEN=1.
+
+    Results are delivered with ``UpdateResultSink`` (signal owned by a main-thread ``QObject``,
+    ``post()`` from ``QThread.run``) so handlers always run on the GUI thread.
+    """
+    if getattr(parent, "_steamtools_startup_autocheck_started", False):
+        return
+    if not _should_run_startup_release_check():
         return
     if auto_update_disabled():
         return
     if should_throttle_autocheck():
         return
-    local = read_local_version_string()
-    if not local:
-        return
-    # Local dev builds without a tag: skip noisy API checks (Help → Check still works).
-    if local.startswith("0.0.0+dev"):
-        return
-    t = CheckReleaseThread(parent)
+    setattr(parent, "_steamtools_startup_autocheck_started", True)
+    local_hint = read_local_version_string()
+    _set_startup_check_status(parent, "Checking for updates…")
+
+    def consumer(result: object) -> None:
+        handle_check_thread_result(parent, result, local_hint, is_auto=True)
+
+    sink = UpdateResultSink(parent, consumer)
+    t = CheckReleaseThread(parent, result_sink=sink)
     _retain_worker_thread(parent, t)
-    t.finished_with_result.connect(
-        lambda r, p=parent, lo=local: handle_check_thread_result(p, r, lo, is_auto=True)
-    )
     t.start()

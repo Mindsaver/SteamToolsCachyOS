@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QProcess, Qt, QTimer
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QIcon, QPixmap, QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -156,7 +156,14 @@ class MainWindow(QMainWindow):
             pass
         self.validate_backend()
 
-        QTimer.singleShot(1500, self._deferred_automatic_update_check)
+    def showEvent(self, event: QShowEvent) -> None:
+        """Schedule the automatic update check after the window is actually shown (GUI thread, compositor ready)."""
+        super().showEvent(event)
+        if getattr(self, "_steamtools_startup_update_scheduled", False):
+            return
+        self._steamtools_startup_update_scheduled = True
+        # One shot shortly after first paint so the event loop is running before we spawn threads / dialogs.
+        QTimer.singleShot(150, self._deferred_automatic_update_check)
 
     def _deferred_automatic_update_check(self) -> None:
         steamtools_update.maybe_start_automatic_update_check(self)
@@ -278,6 +285,8 @@ def main() -> int:
     if not icon.isNull():
         window.setWindowIcon(icon)
     window.show()
+    # Backup if the first showEvent path never schedules the check (some compositors / focus edge cases).
+    QTimer.singleShot(2500, window._deferred_automatic_update_check)
     return app.exec()
 
 

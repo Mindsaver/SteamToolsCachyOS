@@ -47,7 +47,7 @@ If you **only ever ran** `./SteamToolsCachyOS` from an unpacked folder and never
 ## Updates and autoupdate
 
 - **Menu**: **Help → Check for updates…** compares your semver to the [latest GitHub release](https://api.github.com/repos/Mindsaver/SteamToolsCachyOS/releases/latest), can download the same zip, and re-runs `install.sh`. After updating, **restart** the app so the new binary loads.
-- **Automatic check**: once per **24 hours** when you start the **installed** app (state is cached under `$XDG_CACHE_HOME/SteamToolsCachyOS/last_update_check`). To turn this off while keeping the menu check: set `**STEAMTOOLS_NO_AUTO_UPDATE=1`**.
+- **Automatic check**: when you start the **installed** app, it compares your version to GitHub’s latest release. **Release installs** (semver without a local `+dev` / `0.0.0+…` dev line from `./build`) use a **1-hour** throttle (timestamp under `$XDG_CACHE_HOME/SteamToolsCachyOS/last_update_check`). **Direct / local builds** skip that throttle so every launch hits GitHub. **Help → Check for updates** always hits GitHub immediately. To skip the automatic check entirely: `**STEAMTOOLS_NO_AUTO_UPDATE=1**`. To throttle a dev build too: `**STEAMTOOLS_AUTO_CHECK_THROTTLE=1**`. To turn throttling off for a release install: `**STEAMTOOLS_AUTO_CHECK_THROTTLE=0**`. Gap override: `**STEAMTOOLS_AUTO_CHECK_INTERVAL_HOURS**` (float; minimum 5 minutes). `**STEAMTOOLS_FORCE_UPDATE_CHECK=1**` runs the startup check once even inside the throttle window.
 - **Outside the app**: run the [one-liner](#one-liner-latest-github-release) again, or unpack a newer zip and run `./install.sh`.
 
 ---
