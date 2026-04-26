@@ -35,7 +35,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='steam-sync-ui',
+    name='SteamToolsCachyOS',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

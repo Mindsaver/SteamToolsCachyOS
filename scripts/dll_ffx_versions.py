@@ -1,7 +1,7 @@
 """
 Heuristic FFX stack version detection from PE DLL bytes (amdxcffx64.dll, etc.).
 
-Used by sniff-dll-version.py and steam-sync-ui.py (Symlink-Steam).
+Used by sniff-dll-version.py and steam-sync-ui.py (SteamToolsCachyOS).
 Adjust ROLE_KEYWORDS if AMD renames embedded symbol strings.
 """
 from __future__ import annotations

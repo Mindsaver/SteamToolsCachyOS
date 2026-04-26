@@ -21,7 +21,7 @@ from fsr_dll_window import open_fsr_dll_window
 from launch_options_window import open_launch_options_manager
 
 
-APP_NAME = "Symlink-Steam"
+APP_NAME = "SteamToolsCachyOS"
 ICON_FILENAME = "symlink-steam-logo.png"
 BACKEND_SCRIPT = Path(__file__).resolve().parent / "steam-game-symlinks.sh"
 # Previously used for saved DLL path; remove so nothing is left behind.
@@ -29,7 +29,10 @@ _LEGACY_CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
 
 
 def app_icon_path() -> Path | None:
-    override = os.environ.get("SYMLINK_STEAM_ICON", "").strip()
+    override = (
+        os.environ.get("STEAMTOOLS_CACHYOS_ICON", "").strip()
+        or os.environ.get("SYMLINK_STEAM_ICON", "").strip()
+    )
     if override:
         p = Path(override).expanduser()
         if p.is_file():
@@ -90,7 +93,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
-        title = QLabel("Symlink-Steam")
+        title = QLabel("SteamToolsCachyOS")
         title.setStyleSheet("font-size: 18px; font-weight: 600;")
         layout.addWidget(title)
 
@@ -218,9 +221,9 @@ class MainWindow(QMainWindow):
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("Symlink-Steam")
+    app.setApplicationName("SteamToolsCachyOS")
     app.setApplicationDisplayName(APP_NAME)
-    app.setDesktopFileName("Symlink-Steam")
+    app.setDesktopFileName("SteamToolsCachyOS")
 
     icon = build_app_icon()
     if not icon.isNull():

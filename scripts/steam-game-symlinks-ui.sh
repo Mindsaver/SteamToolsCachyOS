@@ -55,7 +55,7 @@ show_form() {
   set +e
   result="$(
     zenity --list \
-      --title="Steam Game Symlink Sync" \
+      --title="SteamToolsCachyOS — symlink sync" \
       --text="AMD DLL:\n${AMD_DLL_PATH:-Not selected (optional)}\n\nChoose an action." \
       --column="Action" \
       "Choose AMD DLL" \

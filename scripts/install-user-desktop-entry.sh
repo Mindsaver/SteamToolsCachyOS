@@ -3,18 +3,18 @@
 # For releases and a proper ~/.local install (and updates), use install.sh from dist/ instead.
 #
 # Works from:
-#   - A release folder: this script next to Symlink-Steam + symlink-steam-logo.png
+#   - A release folder: this script next to SteamToolsCachyOS + symlink-steam-logo.png
 #   - The git repo: .../scripts/install-user-desktop-entry.sh
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_DESKTOP="${XDG_DATA_HOME:-$HOME/.local/share}/applications/Symlink-Steam.desktop"
+APP_DESKTOP="${XDG_DATA_HOME:-$HOME/.local/share}/applications/SteamToolsCachyOS.desktop"
 
-BUNDLE_BIN="$HERE/Symlink-Steam"
+BUNDLE_BIN="$HERE/SteamToolsCachyOS"
 BUNDLE_ICON="$HERE/symlink-steam-logo.png"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
 REPO_ICON="$REPO_ROOT/assets/symlink-steam-logo.png"
-REPO_DIST="$REPO_ROOT/dist/Symlink-Steam"
+REPO_DIST="$REPO_ROOT/dist/SteamToolsCachyOS"
 REPO_PY="$REPO_ROOT/scripts/steam-sync-ui.py"
 
 # Desktop Entry string escape: space -> \s, backslash -> \\
@@ -33,7 +33,7 @@ elif [[ -f "$REPO_ICON" ]]; then
   PY_MAIN="$REPO_PY"
 else
   echo "Expected either:" >&2
-  echo "  - Symlink-Steam and symlink-steam-logo.png next to this script (zip bundle), or" >&2
+  echo "  - SteamToolsCachyOS and symlink-steam-logo.png next to this script (zip bundle), or" >&2
   echo "  - repo layout with $REPO_ICON" >&2
   exit 1
 fi
@@ -67,7 +67,7 @@ else
     echo "python3 and env are required in PATH." >&2
     exit 1
   fi
-  EXEC_FIELD="Exec=$(desk_escape "$ENV_BIN") SYMLINK_STEAM_ICON=$(desk_escape "$ICON_SRC") $(desk_escape "$PYTHON3") $(desk_escape "$PY_MAIN")"
+  EXEC_FIELD="Exec=$(desk_escape "$ENV_BIN") STEAMTOOLS_CACHYOS_ICON=$(desk_escape "$ICON_SRC") $(desk_escape "$PYTHON3") $(desk_escape "$PY_MAIN")"
   TRY_FIELD="TryExec=$(desk_escape "$PYTHON3")"
 fi
 
@@ -77,7 +77,7 @@ cat >"$APP_DESKTOP" <<EOF
 [Desktop Entry]
 Type=Application
 Version=1.5
-Name=Symlink-Steam
+Name=SteamToolsCachyOS
 Comment=Steam game symlinks and AMD FSR DLL helper
 Icon=$ICON_FIELD
 Categories=Utility;Game;
@@ -95,4 +95,4 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then
 fi
 
 echo "Wrote: $APP_DESKTOP"
-echo "Pick Symlink-Steam from the app menu, or run: gtk-launch Symlink-Steam.desktop"
+echo "Pick SteamToolsCachyOS from the app menu, or run: gtk-launch SteamToolsCachyOS.desktop"

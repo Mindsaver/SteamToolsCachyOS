@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create ~/Symlink-Steam/<Game Name>/ with symlinks to install dir, Proton prefix, system32, and userdata.
+# Create ~/SteamToolsCachyOS/<Game Name>/ with symlinks to install dir, Proton prefix, system32, and userdata.
 # Usage: ./steam-game-symlinks.sh [--dry-run]
 set -euo pipefail
 
@@ -14,7 +14,7 @@ for arg in "$@"; do
     -h|--help)
       echo "Usage: $0 [--dry-run]"
       echo "Env:"
-      echo "  STEAMGAME_ROOT   Hub directory (default: \$HOME/Symlink-Steam)"
+      echo "  STEAMGAME_ROOT   Hub directory (default: \$HOME/SteamToolsCachyOS)"
       echo "  STEAM_CLIENT     Steam install dir if autodetect fails"
       echo "  STEAMGAME_FILTER heuristic | all — heuristic skips Proton / Steam Linux Runtime / redistributables (default: heuristic)"
       echo "Args:"
@@ -26,7 +26,7 @@ for arg in "$@"; do
   esac
 done
 
-STEAMGAME_ROOT="${STEAMGAME_ROOT:-$HOME/Symlink-Steam}"
+STEAMGAME_ROOT="${STEAMGAME_ROOT:-$HOME/SteamToolsCachyOS}"
 STEAMGAME_FILTER="${STEAMGAME_FILTER:-heuristic}"
 
 steam_client_from_libraryfolders() {
@@ -111,7 +111,7 @@ TryExec=steam
 Icon=steam
 Terminal=false
 Categories=Game;
-Keywords=Steam;Game;Symlink-Steam;
+Keywords=Steam;Game;SteamToolsCachyOS;
 DESK
   chmod +x "$out"
 }

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Install Symlink-Steam into ~/.local/share/Symlink-Steam (idempotent; safe to re-run for updates).
+# Install SteamToolsCachyOS into ~/.local/share/SteamToolsCachyOS (idempotent; safe to re-run for updates).
 # Works from dist/, a zip extract, or a makeself temp directory.
 set -euo pipefail
 
-APP_NAME="Symlink-Steam"
-BIN_NAME="Symlink-Steam"
+APP_NAME="SteamToolsCachyOS"
+BIN_NAME="SteamToolsCachyOS"
 ICON_NAME="symlink-steam-logo.png"
 UNINSTALL_NAME="uninstall.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/Symlink-Steam"
-APP_DESKTOP="${XDG_DATA_HOME:-$HOME/.local/share}/applications/Symlink-Steam.desktop"
+PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/SteamToolsCachyOS"
+APP_DESKTOP="${XDG_DATA_HOME:-$HOME/.local/share}/applications/SteamToolsCachyOS.desktop"
 BIN_LINK="${HOME}/.local/bin/${BIN_NAME}"
 
 SRC_BIN="$HERE/$BIN_NAME"
@@ -65,7 +65,7 @@ if [[ -z "$ENV_BIN" ]]; then
 fi
 
 ICON_FIELD="$(desk_escape "$INSTALLED_ICON")"
-EXEC_FIELD="Exec=$(desk_escape "$ENV_BIN") SYMLINK_STEAM_ICON=$(desk_escape "$INSTALLED_ICON") $(desk_escape "$INSTALLED_BIN")"
+EXEC_FIELD="Exec=$(desk_escape "$ENV_BIN") STEAMTOOLS_CACHYOS_ICON=$(desk_escape "$INSTALLED_ICON") $(desk_escape "$INSTALLED_BIN")"
 TRY_FIELD="TryExec=$(desk_escape "$INSTALLED_BIN")"
 
 run() {
@@ -113,7 +113,7 @@ fi
 
 if [[ "$NO_BIN_LINK" -eq 0 ]]; then
   run ln -sf "$INSTALLED_BIN" "$BIN_LINK"
-  echo "Symlink: $BIN_LINK -> $INSTALLED_BIN"
+  echo "Bin link: $BIN_LINK -> $INSTALLED_BIN"
 fi
 
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
@@ -146,7 +146,7 @@ else
   _c_rs=
 fi
 echo ""
-echo "${_c_ok}${_c_hi}==================== Symlink-Steam is installed ====================${_c_rs}"
+echo "${_c_ok}${_c_hi}==================== SteamToolsCachyOS is installed ====================${_c_rs}"
 echo ""
 echo "  Application folder:   $PREFIX"
 echo "  Desktop menu entry: $APP_DESKTOP"
@@ -157,7 +157,7 @@ if [[ -f "$PREFIX/VERSION" ]]; then
   echo "  Build:                $(tr -d '\n' <"$PREFIX/VERSION" | head -c 200)"
 fi
 echo ""
-echo "  You should see Symlink-Steam in your app menu. Re-run this installer to update;"
+echo "  You should see SteamToolsCachyOS in your app menu. Re-run this installer to update;"
 echo "  remove with: $PREFIX/$UNINSTALL_NAME"
 echo ""
 echo "${_c_ok}${_c_hi}====================================================================${_c_rs}"
@@ -166,19 +166,19 @@ echo ""
 # Double-clicking the .run from the file manager often runs with no terminal; show something on screen.
 gui_install_done_notice() {
   [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]] || return 0
-  local title="Symlink-Steam installed"
+  local title="SteamToolsCachyOS installed"
   local text
   text="Installation finished.
 
-Open your application menu and search for Symlink-Steam.
+Open your application menu and search for SteamToolsCachyOS.
 
 Installed to:
 $PREFIX"
   if command -v notify-send >/dev/null 2>&1; then
-    notify-send -a "Symlink-Steam" -i "$INSTALLED_ICON" "$title" "$text" 2>/dev/null && return 0
+    notify-send -a "SteamToolsCachyOS" -i "$INSTALLED_ICON" "$title" "$text" 2>/dev/null && return 0
   fi
   if command -v kdialog >/dev/null 2>&1; then
-    kdialog --title "Symlink-Steam" --passivepopup "$text" 18 2>/dev/null || true
+    kdialog --title "SteamToolsCachyOS" --passivepopup "$text" 18 2>/dev/null || true
     return 0
   fi
   if command -v zenity >/dev/null 2>&1; then

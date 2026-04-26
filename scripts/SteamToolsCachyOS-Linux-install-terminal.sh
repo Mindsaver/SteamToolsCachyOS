@@ -3,7 +3,7 @@
 # No extra prompts: Konsole uses --hold so the window stays open after install without "Press Enter".
 set -euo pipefail
 
-RUN_NAME="Symlink-Steam-Linux-x86_64.run"
+RUN_NAME="SteamToolsCachyOS-Linux-x86_64.run"
 
 # Resolve this script's directory even when Dolphin/KDE launches us with a weird cwd.
 _script="${BASH_SOURCE[0]:-$0}"

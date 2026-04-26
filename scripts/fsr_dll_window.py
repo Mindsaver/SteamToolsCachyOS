@@ -28,7 +28,10 @@ ICON_FILENAME = "symlink-steam-logo.png"
 
 
 def _app_icon_path() -> Path | None:
-    override = os.environ.get("SYMLINK_STEAM_ICON", "").strip()
+    override = (
+        os.environ.get("STEAMTOOLS_CACHYOS_ICON", "").strip()
+        or os.environ.get("SYMLINK_STEAM_ICON", "").strip()
+    )
     if override:
         p = Path(override).expanduser()
         if p.is_file():

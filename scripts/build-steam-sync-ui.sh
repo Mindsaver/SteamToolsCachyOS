@@ -9,13 +9,14 @@ DIST_DIR="$ROOT_DIR/dist"
 ICON_SRC="$ROOT_DIR/assets/symlink-steam-logo.png"
 INSTALL_SH="$SCRIPTS_DIR/install.sh"
 UNINSTALL_SCRIPT="$SCRIPTS_DIR/uninstall.sh"
-INSTALL_TERMINAL_SH="$SCRIPTS_DIR/Symlink-Steam-Linux-install-terminal.sh"
-INSTALL_DESKTOP="$ROOT_DIR/assets/Symlink-Steam-Install.desktop"
-INSTALL_DESKTOP_RUN="$ROOT_DIR/assets/Symlink-Steam-Install-Run-in-Terminal.desktop"
+INSTALL_TERMINAL_SH="$SCRIPTS_DIR/SteamToolsCachyOS-Linux-install-terminal.sh"
+INSTALL_DESKTOP="$ROOT_DIR/assets/SteamToolsCachyOS-Install.desktop"
+INSTALL_DESKTOP_RUN="$ROOT_DIR/assets/SteamToolsCachyOS-Install-Run-in-Terminal.desktop"
 README_DIST="$DIST_DIR/README.txt"
 VERSION_FILE="$DIST_DIR/VERSION"
 MS_ROOT="$DIST_DIR/makeself_root"
-RUN_OUT="$DIST_DIR/Symlink-Steam-Linux-x86_64.run"
+RUN_OUT="$DIST_DIR/SteamToolsCachyOS-Linux-x86_64.run"
+BIN_OUT="$DIST_DIR/SteamToolsCachyOS"
 
 if [[ ! -f "$APP_SCRIPT" ]]; then
   echo "App script missing: $APP_SCRIPT" >&2
@@ -31,7 +32,7 @@ pyinstaller \
   --noconfirm \
   --clean \
   --onefile \
-  --name Symlink-Steam \
+  --name SteamToolsCachyOS \
   --paths "$SCRIPTS_DIR" \
   --hidden-import dll_ffx_versions \
   --hidden-import vdf \
@@ -53,38 +54,38 @@ echo "${BUILD_DATE} ${GIT_SHORT}" >"$VERSION_FILE"
 cp -f "$ICON_SRC" "$DIST_DIR/symlink-steam-logo.png"
 cp -f "$INSTALL_SH" "$DIST_DIR/install.sh"
 cp -f "$UNINSTALL_SCRIPT" "$DIST_DIR/uninstall.sh"
-cp -f "$INSTALL_TERMINAL_SH" "$DIST_DIR/Symlink-Steam-Linux-install-terminal.sh"
-cp -f "$INSTALL_DESKTOP" "$DIST_DIR/Symlink-Steam-Install.desktop"
-cp -f "$INSTALL_DESKTOP_RUN" "$DIST_DIR/Symlink-Steam-Install-Run-in-Terminal.desktop"
-chmod +x "$DIST_DIR/Symlink-Steam" "$DIST_DIR/install.sh" "$DIST_DIR/uninstall.sh" \
-  "$DIST_DIR/Symlink-Steam-Linux-install-terminal.sh"
+cp -f "$INSTALL_TERMINAL_SH" "$DIST_DIR/SteamToolsCachyOS-Linux-install-terminal.sh"
+cp -f "$INSTALL_DESKTOP" "$DIST_DIR/SteamToolsCachyOS-Install.desktop"
+cp -f "$INSTALL_DESKTOP_RUN" "$DIST_DIR/SteamToolsCachyOS-Install-Run-in-Terminal.desktop"
+chmod +x "$BIN_OUT" "$DIST_DIR/install.sh" "$DIST_DIR/uninstall.sh" \
+  "$DIST_DIR/SteamToolsCachyOS-Linux-install-terminal.sh"
 
 cat >"$README_DIST" <<'EOF'
-Symlink-Steam — Linux release (zip this folder; optional single-file .run if your packager built it)
+SteamToolsCachyOS — Linux release (zip this folder; optional single-file .run if your packager built it)
 
-  One-file installer (when Symlink-Steam-Linux-x86_64.run is present)
-      chmod +x Symlink-Steam-Linux-x86_64.run
-      ./Symlink-Steam-Linux-x86_64.run
+  One-file installer (when SteamToolsCachyOS-Linux-x86_64.run is present)
+      chmod +x SteamToolsCachyOS-Linux-x86_64.run
+      ./SteamToolsCachyOS-Linux-x86_64.run
       Extracts to a temp directory and runs install.sh automatically.
 
   If double-clicking the .run does nothing (common on KDE / Wayland)
       Double-click one of:
-        Symlink-Steam-Install-Run-in-Terminal.desktop  (runs the .run with Terminal=true)
-        Symlink-Steam-Install.desktop                  (Konsole / other terminals)
-      Or in a shell:  ./Symlink-Steam-Linux-install-terminal.sh
+        SteamToolsCachyOS-Install-Run-in-Terminal.desktop  (runs the .run with Terminal=true)
+        SteamToolsCachyOS-Install.desktop                  (Konsole / other terminals)
+      Or in a shell:  ./SteamToolsCachyOS-Linux-install-terminal.sh
 
   Install or update from this folder
       ./install.sh
-      Copies the app to ~/.local/share/Symlink-Steam, registers the menu entry, and
-      symlinks ~/.local/bin/Symlink-Steam. Run again after unpacking a newer release
+      Copies the app to ~/.local/share/SteamToolsCachyOS, registers the menu entry, and
+      symlinks ~/.local/bin/SteamToolsCachyOS. Run again after unpacking a newer release
       to update in place (same paths; files are overwritten).
 
   Run without installing
-      ./Symlink-Steam
+      ./SteamToolsCachyOS
 
   Remove
       ./uninstall.sh
-      Or after install: ~/.local/share/Symlink-Steam/uninstall.sh
+      Or after install: ~/.local/share/SteamToolsCachyOS/uninstall.sh
 
   VERSION
       One-line build stamp (UTC date + git revision); install.sh copies it into the prefix.
@@ -95,24 +96,24 @@ EOF
 
 rm -rf "$MS_ROOT"
 mkdir -p "$MS_ROOT"
-cp -f "$DIST_DIR/Symlink-Steam" "$DIST_DIR/symlink-steam-logo.png" \
+cp -f "$BIN_OUT" "$DIST_DIR/symlink-steam-logo.png" \
   "$DIST_DIR/install.sh" "$DIST_DIR/uninstall.sh" "$DIST_DIR/README.txt" \
-  "$DIST_DIR/Symlink-Steam-Linux-install-terminal.sh" "$DIST_DIR/Symlink-Steam-Install.desktop" \
-  "$DIST_DIR/Symlink-Steam-Install-Run-in-Terminal.desktop" \
+  "$DIST_DIR/SteamToolsCachyOS-Linux-install-terminal.sh" "$DIST_DIR/SteamToolsCachyOS-Install.desktop" \
+  "$DIST_DIR/SteamToolsCachyOS-Install-Run-in-Terminal.desktop" \
   "$VERSION_FILE" "$MS_ROOT/"
-chmod +x "$MS_ROOT/Symlink-Steam" "$MS_ROOT/install.sh" "$MS_ROOT/uninstall.sh" \
-  "$MS_ROOT/Symlink-Steam-Linux-install-terminal.sh"
+chmod +x "$MS_ROOT/SteamToolsCachyOS" "$MS_ROOT/install.sh" "$MS_ROOT/uninstall.sh" \
+  "$MS_ROOT/SteamToolsCachyOS-Linux-install-terminal.sh"
 
 cat >"$MS_ROOT/MAKESELF_HELP_HEADER.txt" <<'EOF'
-This .run archive installs Symlink-Steam under your user account
-(~/.local/share/Symlink-Steam). No root password is needed.
+This .run archive installs SteamToolsCachyOS under your user account
+(~/.local/share/SteamToolsCachyOS). No root password is needed.
 
 After unpacking, install.sh runs automatically. When it finishes, this
-terminal shows a clear "Symlink-Steam is installed" summary. You can then
+terminal shows a clear "SteamToolsCachyOS is installed" summary. You can then
 open the app from your desktop environment's application menu.
 
-If double-clicking this .run file does nothing, use Symlink-Steam-Install-Run-in-Terminal.desktop
-or Symlink-Steam-Install.desktop from the same folder as the .run (or Symlink-Steam-Linux-install-terminal.sh).
+If double-clicking this .run file does nothing, use SteamToolsCachyOS-Install-Run-in-Terminal.desktop
+or SteamToolsCachyOS-Install.desktop from the same folder as the .run (or SteamToolsCachyOS-Linux-install-terminal.sh).
 EOF
 
 MAKESELF_CMD="${MAKESELF:-}"
@@ -135,7 +136,7 @@ else
     --nowait \
     --tar-quietly \
     --help-header "$MS_ROOT/MAKESELF_HELP_HEADER.txt" \
-    "$MS_ROOT" "$RUN_OUT" "Symlink-Steam: installs to your menu (watch this terminal when done)" \
+    "$MS_ROOT" "$RUN_OUT" "SteamToolsCachyOS: installs to your menu (watch this terminal when done)" \
     ./install.sh
   ms_ec=$?
   set -e
@@ -153,18 +154,18 @@ rm -rf "$MS_ROOT"
 echo ""
 echo "Release folder (zip this):"
 echo "  $DIST_DIR/"
-echo "    Symlink-Steam"
+echo "    SteamToolsCachyOS"
 echo "    symlink-steam-logo.png"
 echo "    install.sh"
 echo "    uninstall.sh"
 echo "    VERSION"
 echo "    README.txt"
-echo "    Symlink-Steam-Linux-install-terminal.sh"
-echo "    Symlink-Steam-Install.desktop"
-echo "    Symlink-Steam-Install-Run-in-Terminal.desktop"
+echo "    SteamToolsCachyOS-Linux-install-terminal.sh"
+echo "    SteamToolsCachyOS-Install.desktop"
+echo "    SteamToolsCachyOS-Install-Run-in-Terminal.desktop"
 if [[ -f "$RUN_OUT" ]]; then
-  echo "    Symlink-Steam-Linux-x86_64.run"
+  echo "    SteamToolsCachyOS-Linux-x86_64.run"
 fi
 echo ""
 echo "Run (portable):"
-echo "  $DIST_DIR/Symlink-Steam"
+echo "  $BIN_OUT"
