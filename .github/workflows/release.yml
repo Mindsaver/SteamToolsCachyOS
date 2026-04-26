@@ -1,0 +1,106 @@
+# Build Linux dist/ from tag or manual dispatch, upload SteamToolsCachyOS-Linux-x86_64.zip to GitHub Releases.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semver without v (e.g. 1.2.3); creates tag and release v1.2.3 on main"
+        required: true
+        type: string
+      prerelease:
+        description: "Prerelease"
+        required: false
+        type: boolean
+        default: false
+      draft:
+        description: "Draft release"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-attach:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject duplicate tag or release (manual)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ver="${{ inputs.version }}"
+          v="v${ver}"
+          git fetch --tags --force origin
+          if [ -n "$(git tag -l "$v")" ]; then
+            echo "Tag ${v} already exists. Use a new version or delete the tag first."
+            exit 1
+          fi
+          if gh release view "$v" 2>/dev/null; then
+            echo "Release $v already exists. Bump the version or delete the release first."
+            exit 1
+          fi
+
+      - name: Set up system packages (PySide6 / PyInstaller runtime)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            curl unzip \
+            libegl1 libopengl0 \
+            libxkbcommon0 libxkbcommon-x11-0 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render0 libxcb-render-util0 \
+            libxcb-shape0 libxcb-shm0 libxcb-xfixes0 libxcb-xinerama0 libxcb1 libx11-xcb1
+
+      - name: Build application
+        working-directory: ${{ github.workspace }}
+        env:
+          SKIP_MAKESELF: "1"
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            export RELEASE_VERSION="${{ inputs.version }}"
+            export GITHUB_REF_NAME="v${{ inputs.version }}"
+          else
+            export GITHUB_REF_NAME="${{ github.ref_name }}"
+          fi
+          chmod +x scripts/build-steam-sync-ui.sh
+          ./scripts/build-steam-sync-ui.sh
+
+      - name: Create zip asset
+        run: |
+          cd dist
+          zip -r -q "$GITHUB_WORKSPACE/SteamToolsCachyOS-Linux-x86_64.zip" .
+          ls -la "$GITHUB_WORKSPACE/SteamToolsCachyOS-Linux-x86_64.zip"
+
+      - name: GitHub Release (from tag push)
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: SteamToolsCachyOS-Linux-x86_64.zip
+          generate_release_notes: true
+
+      - name: GitHub Release (from workflow dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          v="${{ inputs.version }}"
+          DRAFT=""
+          PRE=""
+          if [ "${{ inputs.draft }}" = "true" ]; then DRAFT="--draft"; fi
+          if [ "${{ inputs.prerelease }}" = "true" ]; then PRE="--prerelease"; fi
+          gh release create "v${v}" "$GITHUB_WORKSPACE/SteamToolsCachyOS-Linux-x86_64.zip" \
+            --title "v${v}" --generate-notes $DRAFT $PRE

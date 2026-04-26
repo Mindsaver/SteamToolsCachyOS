@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Qt
+from PySide6.QtCore import QProcess, Qt, QTimer
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import steamtools_update
 from fsr_dll_window import open_fsr_dll_window
 from launch_options_window import open_launch_options_manager
 
@@ -87,6 +88,11 @@ class MainWindow(QMainWindow):
         self._launch_options_manager_ref: object | None = None
         self._fsr_dll_window_ref: object | None = None
 
+        menu_bar = self.menuBar()
+        help_menu = menu_bar.addMenu("Help")
+        help_menu.addAction("Check for updates…", self._check_for_updates)
+        help_menu.addAction("About SteamToolsCachyOS", self._show_about)
+
         root = QWidget(self)
         self.setCentralWidget(root)
         layout = QVBoxLayout(root)
@@ -138,6 +144,31 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
         self.validate_backend()
+
+        QTimer.singleShot(1500, self._deferred_automatic_update_check)
+
+    def _deferred_automatic_update_check(self) -> None:
+        steamtools_update.maybe_start_automatic_update_check(self)
+
+    def _check_for_updates(self) -> None:
+        steamtools_update.start_manual_check_for_updates(self)
+
+    def _show_about(self) -> None:
+        ver = steamtools_update.read_local_version_string() or "(unknown)"
+        pfx = steamtools_update.install_prefix() or steamtools_update.bundle_prefix()
+        build_extra = ""
+        vfile = pfx / "VERSION"
+        if vfile.is_file():
+            raw = vfile.read_text(encoding="utf-8", errors="replace").strip()
+            lines = [ln for ln in raw.splitlines() if ln.strip()]
+            if len(lines) > 1:
+                build_extra = "\n" + "\n".join(lines[1 : min(3, len(lines))])
+        QMessageBox.about(
+            self,
+            f"About {APP_NAME}",
+            f"{APP_NAME}\n\nVersion: {ver}{build_extra}\n\n"
+            "https://github.com/Mindsaver/SteamToolsCachyOS",
+        )
 
     def validate_backend(self) -> None:
         if not BACKEND_SCRIPT.exists():

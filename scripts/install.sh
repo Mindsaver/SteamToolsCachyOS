@@ -17,6 +17,7 @@ SRC_BIN="$HERE/$BIN_NAME"
 SRC_ICON="$HERE/$ICON_NAME"
 SRC_UNINSTALL="$HERE/$UNINSTALL_NAME"
 SRC_VERSION="$HERE/VERSION"
+SRC_RELEASE_VERSION="$HERE/RELEASE_VERSION"
 
 DRY_RUN=0
 NO_BIN_LINK=0
@@ -88,6 +89,9 @@ run cp -f "$SRC_UNINSTALL" "$PREFIX/$UNINSTALL_NAME"
 if [[ -f "$SRC_VERSION" ]]; then
   run cp -f "$SRC_VERSION" "$PREFIX/VERSION"
 fi
+if [[ -f "$SRC_RELEASE_VERSION" ]]; then
+  run cp -f "$SRC_RELEASE_VERSION" "$PREFIX/RELEASE_VERSION"
+fi
 
 run chmod +x "$INSTALLED_BIN" "$PREFIX/$UNINSTALL_NAME"
 
@@ -152,6 +156,9 @@ echo "  Application folder:   $PREFIX"
 echo "  Desktop menu entry: $APP_DESKTOP"
 if [[ "$NO_BIN_LINK" -eq 0 ]]; then
   echo "  Terminal command:   $BIN_LINK"
+fi
+if [[ -f "$PREFIX/RELEASE_VERSION" ]]; then
+  echo "  Release version:      $(tr -d '\n' <"$PREFIX/RELEASE_VERSION" | head -c 120)"
 fi
 if [[ -f "$PREFIX/VERSION" ]]; then
   echo "  Build:                $(tr -d '\n' <"$PREFIX/VERSION" | head -c 200)"

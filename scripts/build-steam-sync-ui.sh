@@ -26,7 +26,7 @@ fi
 python3 -m venv "$BUILD_VENV"
 source "$BUILD_VENV/bin/activate"
 python -m pip install --upgrade pip
-python -m pip install PySide6 pyinstaller vdf
+python -m pip install PySide6 pyinstaller vdf packaging
 
 pyinstaller \
   --noconfirm \
@@ -43,13 +43,35 @@ pyinstaller \
   --hidden-import gpu_vendor_detect \
   --hidden-import steam_compat_context \
   --hidden-import fsr_dll_window \
+  --hidden-import steamtools_update \
+  --hidden-import packaging \
+  --hidden-import packaging.version \
   --add-data "$SCRIPTS_DIR/steam-game-symlinks.sh:." \
   --add-data "$ROOT_DIR/assets/symlink-steam-logo.png:." \
   "$APP_SCRIPT"
 
 GIT_SHORT="$(cd "$ROOT_DIR" && git rev-parse --short HEAD 2>/dev/null || echo nogit)"
 BUILD_DATE="$(date -Iseconds 2>/dev/null || date)"
-echo "${BUILD_DATE} ${GIT_SHORT}" >"$VERSION_FILE"
+
+# Semver in RELEASE_VERSION for GitHub / in-app updates (and first line of VERSION)
+RELEASE_VERSION_FILE="$DIST_DIR/RELEASE_VERSION"
+if [[ -n "${RELEASE_VERSION:-}" ]]; then
+  SEMVER="${RELEASE_VERSION#v}"
+elif [[ -n "${GITHUB_REF_NAME:-}" && "$GITHUB_REF_NAME" == v* ]]; then
+  SEMVER="${GITHUB_REF_NAME#v}"
+else
+  _TAG="$(cd "$ROOT_DIR" && (git describe --tags --exact-match 2>/dev/null || git describe --tags --abbrev=0 2>/dev/null) || true)"
+  if [[ -n "${_TAG:-}" ]]; then
+    SEMVER="${_TAG#v}"
+  else
+    SEMVER="0.0.0+dev.${GIT_SHORT}"
+  fi
+fi
+printf '%s\n' "$SEMVER" >"$RELEASE_VERSION_FILE"
+{
+  printf '%s\n' "$SEMVER"
+  printf '%s %s\n' "$BUILD_DATE" "$GIT_SHORT"
+} >"$VERSION_FILE"
 
 cp -f "$ICON_SRC" "$DIST_DIR/symlink-steam-logo.png"
 cp -f "$INSTALL_SH" "$DIST_DIR/install.sh"
@@ -88,7 +110,15 @@ SteamToolsCachyOS — Linux release (zip this folder; optional single-file .run 
       Or after install: ~/.local/share/SteamToolsCachyOS/uninstall.sh
 
   VERSION
-      One-line build stamp (UTC date + git revision); install.sh copies it into the prefix.
+      Line 1: release semver. Line 2: UTC date + git revision. install.sh copies into the prefix.
+
+  RELEASE_VERSION
+      Single line: semver (matches Git tag without leading "v").
+
+  Install latest from GitHub (downloads release zip; needs curl, python3, unzip)
+      curl -fsSL https://raw.githubusercontent.com/Mindsaver/SteamToolsCachyOS/main/scripts/install-latest-github.sh | bash
+
+  Forks: STEAMTOOLS_INSTALL_REPO=owner/repo
 
 Maintainer: install the `makeself` package (or set MAKESELF=/path/to/makeself.sh) to produce the .run.
 Set SKIP_MAKESELF=1 when invoking the build script to skip .run generation.
@@ -100,7 +130,7 @@ cp -f "$BIN_OUT" "$DIST_DIR/symlink-steam-logo.png" \
   "$DIST_DIR/install.sh" "$DIST_DIR/uninstall.sh" "$DIST_DIR/README.txt" \
   "$DIST_DIR/SteamToolsCachyOS-Linux-install-terminal.sh" "$DIST_DIR/SteamToolsCachyOS-Install.desktop" \
   "$DIST_DIR/SteamToolsCachyOS-Install-Run-in-Terminal.desktop" \
-  "$VERSION_FILE" "$MS_ROOT/"
+  "$VERSION_FILE" "$RELEASE_VERSION_FILE" "$MS_ROOT/"
 chmod +x "$MS_ROOT/SteamToolsCachyOS" "$MS_ROOT/install.sh" "$MS_ROOT/uninstall.sh" \
   "$MS_ROOT/SteamToolsCachyOS-Linux-install-terminal.sh"
 
@@ -159,6 +189,7 @@ echo "    symlink-steam-logo.png"
 echo "    install.sh"
 echo "    uninstall.sh"
 echo "    VERSION"
+echo "    RELEASE_VERSION"
 echo "    README.txt"
 echo "    SteamToolsCachyOS-Linux-install-terminal.sh"
 echo "    SteamToolsCachyOS-Install.desktop"
