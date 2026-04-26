@@ -230,7 +230,8 @@ class MainWindow(QMainWindow):
         self.update_btn.clicked.connect(self.start_update_dll)
         actions.addWidget(self.update_btn)
 
-        self.launch_opts_btn = QPushButton("Launch Options…")
+        self.launch_opts_btn = QPushButton("Game launch options…")
+        self.launch_opts_btn.setToolTip("Optional extra commands Steam runs before a game starts")
         self.launch_opts_btn.clicked.connect(self._open_launch_options)
         actions.addWidget(self.launch_opts_btn)
 
