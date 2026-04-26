@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import ssl
 import sys
 import tempfile
 import time
@@ -25,6 +26,16 @@ RELEASE_ASSET_NAME = "SteamToolsCachyOS-Linux-x86_64.zip"
 AUTO_CHECK_INTERVAL_S = 24 * 60 * 60
 CACHE_SUBDIR = "SteamToolsCachyOS"
 CACHE_STAMP = "last_update_check"
+
+
+def _https_ssl_context() -> ssl.SSLContext:
+    """PyInstaller onefile often lacks system CA paths; certifi ships Mozilla roots."""
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
 
 
 @dataclass(frozen=True)
@@ -125,7 +136,7 @@ def _fetch_releases_json() -> dict:
         },
         method="GET",
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with urllib.request.urlopen(req, timeout=60, context=_https_ssl_context()) as resp:
         body = resp.read()
     return json.loads(body.decode("utf-8"))
 
@@ -171,7 +182,9 @@ def _download_to_file(url: str, dest: Path) -> None:
         headers={"User-Agent": "SteamToolsCachyOS-updater"},
         method="GET",
     )
-    with urllib.request.urlopen(req, timeout=300) as resp, dest.open("wb") as out:
+    with urllib.request.urlopen(req, timeout=300, context=_https_ssl_context()) as resp, dest.open(
+        "wb"
+    ) as out:
         shutil.copyfileobj(resp, out, length=256 * 1024)
 
 

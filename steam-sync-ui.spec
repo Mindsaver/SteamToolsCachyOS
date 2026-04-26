@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files
 
 
 a = Analysis(
@@ -8,7 +9,8 @@ a = Analysis(
     datas=[
         ('/home/mindsaver/Dev/projects/fsrpatch/scripts/steam-game-symlinks.sh', '.'),
         ('/home/mindsaver/Dev/projects/fsrpatch/assets/symlink-steam-logo.png', '.'),
-    ],
+    ]
+    + collect_data_files('certifi'),
     hiddenimports=[
         'dll_ffx_versions',
         'fsr_dll_window',
@@ -22,6 +24,7 @@ a = Analysis(
         'steamtools_update',
         'packaging',
         'packaging.version',
+        'certifi',
     ],
     hookspath=[],
     hooksconfig={},
