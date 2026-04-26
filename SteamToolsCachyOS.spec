@@ -1,12 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files
+
+datas = [('/home/mindsaver/Dev/projects/fsrpatch/scripts/steam-game-symlinks.sh', '.'), ('/home/mindsaver/Dev/projects/fsrpatch/assets/symlink-steam-logo.png', '.')]
+datas += collect_data_files('certifi')
 
 
 a = Analysis(
     ['/home/mindsaver/Dev/projects/fsrpatch/scripts/steam-sync-ui.py'],
     pathex=['/home/mindsaver/Dev/projects/fsrpatch/scripts'],
     binaries=[],
-    datas=[('/home/mindsaver/Dev/projects/fsrpatch/scripts/steam-game-symlinks.sh', '.'), ('/home/mindsaver/Dev/projects/fsrpatch/assets/symlink-steam-logo.png', '.')],
-    hiddenimports=['dll_ffx_versions', 'vdf', 'steam_launch_options_core', 'launch_options_window', 'launch_options_compose', 'launch_options_structured_panel', 'gpu_vendor_detect', 'steam_compat_context', 'fsr_dll_window'],
+    datas=datas,
+    hiddenimports=['dll_ffx_versions', 'vdf', 'steam_launch_options_core', 'launch_options_window', 'launch_options_compose', 'launch_options_structured_panel', 'gpu_vendor_detect', 'steam_compat_context', 'fsr_dll_window', 'steamtools_update', 'packaging', 'packaging.version', 'certifi'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
