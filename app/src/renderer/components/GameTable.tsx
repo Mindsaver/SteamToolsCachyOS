@@ -10,7 +10,7 @@ import {
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowUpDown, FolderOpen, ExternalLink } from 'lucide-react'
-import type { InstalledGame } from '../../shared/types'
+import type { CompatToolInfo, InstalledGame } from '../../shared/types'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Badge } from './ui/badge'
@@ -27,8 +27,8 @@ interface GameTableProps {
   /** Multi-select: set of checked app IDs */
   selectedAppIds?: Set<number>
   onSelectionChange?: (ids: Set<number>) => void
-  /** Extra right-side column label for compat info */
-  compatMap?: Map<number, string>
+  /** Per-game Steam compatibility tool (Steam Play default vs override). When set, shows Proton column */
+  compatByApp?: Map<number, CompatToolInfo>
   searchValue?: string
   onSearchChange?: (v: string) => void
 }
@@ -39,7 +39,7 @@ export function GameTable({
   selectedAppId,
   selectedAppIds,
   onSelectionChange,
-  compatMap,
+  compatByApp,
   searchValue,
   onSearchChange,
 }: GameTableProps) {
@@ -152,18 +152,40 @@ export function GameTable({
       })
     )
 
-    if (compatMap) {
+    if (compatByApp) {
       cols.push(
         col.display({
           id: 'compat',
-          header: 'Compat',
-          size: 90,
+          header: 'Proton',
+          size: 130,
           cell: ({ row }) => {
-            const c = compatMap.get(row.original.appId)
-            return c ? (
-              <Badge variant="secondary" className="text-xs py-0 max-w-[80px] truncate block">{c}</Badge>
-            ) : (
-              <Badge variant="outline" className="text-xs py-0">Native</Badge>
+            const info = compatByApp.get(row.original.appId)
+            if (!info) {
+              return <span className="text-muted-foreground/40 text-xs">—</span>
+            }
+            const title =
+              info.selectionKind === 'native'
+                ? 'Forced Linux native for this title (Steam compatibility disabled).'
+                : info.selectionKind === 'steam_default'
+                  ? `Uses Steam’s Steam Play default (${info.steamDefaultDescription ?? info.toolDescription ?? 'unset'}).`
+                  : `Custom compatibility tool. Steam Play default is ${info.steamDefaultDescription ?? 'unset'}.`
+            if (info.selectionKind === 'native') {
+              return (
+                <Badge variant="outline" className="text-xs py-0 max-w-[120px] truncate block" title={title}>
+                  Native
+                </Badge>
+              )
+            }
+            const main = info.toolDescription ?? info.toolName ?? '—'
+            return (
+              <span className="block min-w-0 max-w-[130px]" title={title}>
+                <span className="text-xs font-medium truncate block">{main}</span>
+                {info.selectionKind === 'steam_default' ? (
+                  <span className="text-[10px] text-muted-foreground leading-tight block">Steam default</span>
+                ) : (
+                  <span className="text-[10px] text-amber-500/90 leading-tight block">Custom</span>
+                )}
+              </span>
             )
           },
         })
@@ -216,7 +238,7 @@ export function GameTable({
     )
 
     return cols
-  }, [multiMode, selectedAppIds, onSelectionChange, compatMap, toggleOne])
+  }, [multiMode, selectedAppIds, onSelectionChange, compatByApp, toggleOne])
 
   const table = useReactTable({
     data: games,
@@ -235,7 +257,7 @@ export function GameTable({
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 38,
+    estimateSize: () => (compatByApp ? 44 : 38),
     overscan: 10,
   })
 

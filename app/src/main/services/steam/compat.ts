@@ -1,12 +1,12 @@
 import fs from 'fs'
 import path from 'path'
 import vdf from 'simple-vdf'
-import type { CompatToolInfo } from '../../../shared/types'
+import type { CompatSelectionKind, CompatToolInfo } from '../../../shared/types'
 
 // Reads config.vdf CompatToolMapping for Steam compatibility-tool context.
-// to identify what Proton/compat tool is configured per game.
+// Global Steam Play default is stored under mapping key "0"; per-game overrides use app IDs.
 
-interface CompatMapping {
+export interface CompatMapping {
   [appId: string]: {
     name?: string
     config?: string
@@ -55,7 +55,7 @@ const TOOL_LABELS: Record<string, string> = {
   steamlinuxruntime: 'Steam Linux Runtime',
 }
 
-function toolLabel(name: string): string {
+export function toolLabel(name: string): string {
   const lower = name.toLowerCase().replace(/[-_ ]/g, '_')
   if (TOOL_LABELS[lower]) return TOOL_LABELS[lower]
   // Proton 9.x, etc.
@@ -64,18 +64,62 @@ function toolLabel(name: string): string {
   return name
 }
 
-export function getCompatInfo(mappings: CompatMapping, appId: number): CompatToolInfo {
-  const entry = mappings[String(appId)]
-  if (!entry) {
-    return { toolName: null, toolDescription: null, sourceLabel: 'global default' }
+/** Steam Play default compatibility tool from CompatToolMapping key "0". */
+export function getSteamPlayDefault(mappings: CompatMapping): {
+  toolName: string | null
+  toolDescription: string | null
+} {
+  const entry = mappings['0']
+  if (!entry || typeof entry !== 'object') {
+    return { toolName: null, toolDescription: null }
   }
-  const name = entry.name ?? ''
+  const raw = entry.name
+  const name = typeof raw === 'string' ? raw.trim() : ''
   if (!name || name === '0') {
-    return { toolName: null, toolDescription: 'Steam Linux native', sourceLabel: 'per-game (none)' }
+    return { toolName: null, toolDescription: null }
   }
+  return { toolName: name, toolDescription: toolLabel(name) }
+}
+
+function baseFields(
+  selectionKind: CompatSelectionKind,
+  def: { toolName: string | null; toolDescription: string | null },
+  overrides: Partial<CompatToolInfo>
+): CompatToolInfo {
   return {
+    steamDefaultToolName: def.toolName,
+    steamDefaultDescription: def.toolDescription,
+    ...overrides,
+    selectionKind,
+  }
+}
+
+export function getCompatInfo(mappings: CompatMapping, appId: number): CompatToolInfo {
+  const def = getSteamPlayDefault(mappings)
+  const entry = mappings[String(appId)]
+
+  if (!entry) {
+    return baseFields('steam_default', def, {
+      toolName: def.toolName,
+      toolDescription: def.toolDescription,
+      sourceLabel: 'Steam default',
+    })
+  }
+
+  const rawName = entry.name
+  const name = typeof rawName === 'string' ? rawName.trim() : ''
+  if (!name || name === '0') {
+    return baseFields('native', def, {
+      toolName: null,
+      toolDescription: 'Steam Linux native',
+      sourceLabel: 'Linux native (per-game)',
+    })
+  }
+
+  const sameAsGlobal = def.toolName !== null && name === def.toolName
+  return baseFields(sameAsGlobal ? 'steam_default' : 'override', def, {
     toolName: name,
     toolDescription: toolLabel(name),
-    sourceLabel: 'per-game',
-  }
+    sourceLabel: sameAsGlobal ? 'Steam default' : 'Per-game override',
+  })
 }

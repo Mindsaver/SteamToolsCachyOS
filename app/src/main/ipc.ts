@@ -10,7 +10,7 @@ import {
   latestBackupPath, restoreBackup,
 } from './services/steam/localconfig'
 import { isSteamRunning, closeSteam } from './services/steam/processes'
-import { loadCompatMappings, getCompatInfo } from './services/steam/compat'
+import { loadCompatMappings, getCompatInfo, getSteamPlayDefault } from './services/steam/compat'
 import { getGlobalEnvOverridesForApp } from './services/steam/userSettings'
 import { runSymlinkHub } from './services/symlink/hub'
 import { analyzeDll } from './services/fsr/ffx'
@@ -21,6 +21,7 @@ import { loadSettings, saveSettings } from './services/settings'
 import { checkForUpdates, downloadUpdate, installUpdate } from './services/updater'
 import type {
   AppAboutInfo,
+  SteamCompatSnapshot,
   SymlinkHubOptions,
   BatchTransformPreviewRequest,
   BatchTransformApplyRequest,
@@ -245,6 +246,24 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (!installPath) return null
     const mappings = loadCompatMappings(installPath)
     return getCompatInfo(mappings, appId)
+  })
+
+  ipcMain.handle(IPC.COMPAT_SNAPSHOT, async (_e, appIds: number[]): Promise<SteamCompatSnapshot> => {
+    const settings = loadSettings()
+    const installPath = settings.steamPath || resolveSteamInstall()
+    const empty: SteamCompatSnapshot = {
+      steamPlayDefault: { toolName: null, toolDescription: null },
+      perApp: {},
+    }
+    if (!installPath) return empty
+
+    const mappings = loadCompatMappings(installPath)
+    const steamPlayDefault = getSteamPlayDefault(mappings)
+    const perApp: SteamCompatSnapshot['perApp'] = {}
+    for (const id of appIds) {
+      perApp[String(id)] = getCompatInfo(mappings, id)
+    }
+    return { steamPlayDefault, perApp }
   })
 
   ipcMain.handle(IPC.STEAM_GET_GLOBAL_ENV, async (_e, appId: number) => {

@@ -29,6 +29,7 @@ export const IPC = {
 
   // Compat tool context
   COMPAT_GET: 'compat:get',
+  COMPAT_SNAPSHOT: 'compat:snapshot',
 
   // Localconfig
   LOCALCONFIG_RESTORE_BACKUP: 'localconfig:restore-backup',

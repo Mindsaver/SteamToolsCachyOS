@@ -1,0 +1,166 @@
+Proton-Vanilla Config Options | Valve,,,
+,,,
+,,,
+Compat config string,Environment Variable,Description,Vendor Specific
+,PROTON_LOG,"Convenience method for dumping a useful debug log to $PROTON_LOG_DIR/steam-$APPID.log. Set to 1 to enable default logging, or set to a string to be appended to the default WINEDEBUG channels.",debugging
+,PROTON_LOG_DIR,Output log files into the directory specified. Defaults to your home directory.,debugging
+,PROTON_WAIT_ATTACH,"Wait for a debugger to attach to steam.exe before launching the game process. To attach to the game process at startup, debuggers should be set to follow child processes.",debugging
+,PROTON_CRASH_REPORT_DIR,"Write crash logs into this directory. Does not clean up old logs, so may eat all your disk space eventually.",debugging
+wined3d,PROTON_USE_WINED3D,"Use OpenGL-based wined3d instead of Vulkan-based DXVK for d3d11, d3d10, and d3d9.",debugging
+nod3d11,PROTON_NO_D3D11,"Disable d3d11.dll, for d3d11 games which can fall back to and run better with d3d9.",debugging
+nod3d10,PROTON_NO_D3D10,"Disable d3d10.dll and dxgi.dll, for d3d10 games which can fall back to and run better with d3d9.",debugging
+dxvkd3d8,PROTON_DXVK_D3D8,Use DXVK's d3d8.dll.,debugging
+noesync,PROTON_NO_ESYNC,Do not use eventfd-based in-process synchronization primitives.,debugging
+nofsync,PROTON_NO_FSYNC,Do not use futex-based in-process synchronization primitives. (Automatically disabled on systems with no FUTEX_WAIT_MULTIPLE support.),debugging
+noxim,PROTON_NO_XIM,Enabled by default. Do not attempt to use XIM (X Input Methods) support. XIM support is known to cause crashes with libx11 older than version 1.7.,debugging
+disablenvapi,PROTON_DISABLE_NVAPI,Disable NVIDIA's NVAPI GPU support library.,debugging
+nativevulkanloader,,"Use the Vulkan loader shipped with the game instead of Proton's built-in Vulkan loader. This breaks VR support, but is required by a few games.",debugging
+forcelgadd,PROTON_FORCE_LARGE_ADDRESS_AWARE,Force Wine to enable the LARGE_ADDRESS_AWARE flag for all executables. Enabled by default.,dafault
+heapdelayfree,PROTON_HEAP_DELAY_FREE,"Delay freeing some memory, to work around application use-after-free bugs.",debugging
+gamedrive,PROTON_SET_GAME_DRIVE,Create an S: drive which points to the Steam Library which contains the game.,
+noforcelgadd,,"Disable forcelgadd. If both this and forcelgadd are set, enabled wins.",
+oldglstr,PROTON_OLD_GL_STRING,"Set some driver overrides to limit the length of the GL extension string, for old games that crash on very long extension strings.",debugging
+vkd3dfl12,,"Force the Direct3D 12 feature level to 12, regardless of driver support.",debugging
+vkd3dbindlesstb,,Put force_bindless_texel_buffer into VKD3D_CONFIG.,debugging
+nomfdxgiman,WINE_DO_NOT_CREATE_DXGI_DEVICE_MANAGER,Enable hack to work around video issues in some games due to incomplete IMFDXGIDeviceManager support.,debugging
+noopwr,WINE_DISABLE_VULKAN_OPWR,Enable hack to disable Vulkan other process window rendering which sometimes causes issues on Wayland due to blit being one frame behind.,debugging
+hidenvgpu,PROTON_HIDE_NVIDIA_GPU,"Force Nvidia GPUs to always be reported as AMD GPUs. Some games require this if they depend on Windows-only Nvidia driver functionality. See also DXVK's nvapiHack config, which only affects reporting from Direct3D.",debugging
+,WINE_FULLSCREEN_INTEGER_SCALING,"Enable integer scaling mode, to give sharp pixels when upscaling.",
+cmdlineappend:,,Append the string after the colon as an argument to the game command. May be specified more than once. Escape commas and backslashes with a backslash.,
+xalia or noxalia,PROTON_USE_XALIA,"Enable Xalia, a program that can add a gamepad UI for some keyboard/mouse interfaces, or set to 0 to disable. The default is to enable it dynamically based on window contents.",debugging
+fnad3d11,FNA3D_FORCE_DRIVER=D3D11,Force FNA to use D3D11 for rendering.,debugging
+seccomp,PROTON_USE_SECCOMP,"Note: Obsoleted in Proton 5.13. In older versions, enable seccomp-bpf filter to emulate native syscalls, required for some DRM protections to work.",debugging
+d9vk,PROTON_USE_D9VK,"Note: Obsoleted in Proton 5.0. In older versions, use Vulkan-based DXVK instead of OpenGL-based wined3d for d3d9.",debugging
+,,,
+Proton-CachyOS Config Options | CachyOS,,,
+,,,
+,,,
+Compat config string,Environment Variable,Description,Vendor Specific
+,PROTON_LOG,"In case of videos/audio not playing or being replaced by the SMPTE color bars, use""+mfplat,+quartz,+wmvcore,+wmadec,+dmo"" instead of 1.",debugging
+dxvksarek,PROTON_DXVK_SAREK,"Use the dxvk-sarek fork as DXVK replacement for older GPUs that don't properly support Vulkan 1.3 (supported Vulkan 1.1.x to 1.2.x). It is using the async branch, so it SHOULD NOT to be used with games using anti-cheat or multiplayer games in general. You have been warned.",debugging
+dxvklowlatency,PROTON_DXVK_LOWLATENCY,"Enable the alternative dxvk-low-latency fork, which enhances the original dxvk with low-latency frame pacing capabilities to improve game responsiveness and input lag. It also improves latency stability over time, usually resulting in a more accurate playback speed of the generated video. Refer to the project's documentation for in-depth configuration.",common
+d7vkddraw,PROTON_D7VK_DDRAW,Use ddraw.dll from the D7VK project for DirectX 7-or-lower games.,debugging
+fsr4,PROTON_FSR4_UPGRADE,"Automatically download amdxcffx64.dll and upgrade games with FSR 3.1 to use FSR 4. Version to download can be specified by supplying it as a value, like so PROTON_FSR4_UPGRADE=""4.0.1"", instead of 1. Downloads the latest available and known-good version of the required DLL by default. If you want to use custom DLLs refer to this section.","AMD, common, recommended"
+fsr4hud,PROTON_FSR4_INDICATOR,Enable the FSR4 watermark at the top left portion of the screen. This is a shorthand option for setting FSR4_WATERMARK=1 and MLFG_WATERMARK=1.,"AMD, debugging"
+fsr4rdna3,PROTON_FSR4_RDNA3_UPGRADE,Identical to PROTON_FSR4_UPGRADE but for RDNA3 GPUs. Enables some required compatibility options and downloads version 4.0.0 of the DLL by default. If you want to use custom DLLs refer to this section.,"AMD, common"
+mlfg,PROTON_MLFG_UPGRADE,"Enables the use of MLFG when amdxcffx64.dll >= 4.0.3. This option is enabled automatically with PROTON_FSR4_UPGRADE and PROTON_FSR4_RDNA3_UPGRADE. If you need to disable it while still using the FSR4 upgrade options, you can add PROTON_MLFG_UPRADE=0.","AMD, common"
+fsr3,PROTON_FSR3_UPGRADE,,"AMD, experimental"
+dlss,PROTON_DLSS_UPGRADE,"Automatically download and use newer versions of nvngx_dlss(d|g).dll DLLs. Version to download can be specified by supplying it as a value, like so PROTON_DLSS_UPGRADE=""310.2"", instead of 1, to download version 310.2.1.0. This option also sets DXVK_NVAPI_DRS_SETTINGS to use the latest preset. If you provide your own configuration through this environment variable, your configuration will override the defaults.","NVIDIA, common, recommended"
+dlsshud,PROTON_DLSS_INDICATOR,Enable the DLSS overlay at the bottom left portion of the screen.,"NVIDIA, debugging"
+xess,PROTON_XESS_UPGRADE,,"Intel, common, recommended"
+nvidialibs,PROTON_NVIDIA_LIBS,"Enable alternative implementations of Nvidia libraries missing from Proton. Allows things like hardware-accelerated PhysX to function. This option enables all of nvcuda, nvenc, nvml and nvoptix. These are incompatible with wow64 and thus disabled when PROTON_USE_WOW64=1 is set.",NVIDIA
+nvidialibsno32,PROTON_NVIDIA_LIBS_NO_32BIT,"Use with the previous option, to enable only the 64bit nvidia libraries. Useful if you are using RTX series 4000 or 5000 GPUs and you had bad performance or crashes when enabling these with 32bit games.",NVIDIA
+nvcuda,PROTON_NVIDIA_NVCUDA,Enable alternative nvcuda.dll from nvidial-libs only.,NVIDIA
+nvenc,PROTON_NVIDIA_NVENC,Enable alternative nvcencodeapi(64).dll from nvidial-libs only.,NVIDIA
+nvml,PROTON_NVIDIA_NVML,Enable alternative nvml.dll from nvidial-libs only. This option is enabled by default.,NVIDIA
+nvoptix,PROTON_NVIDIA_NVOPTIX,Enable alternative nvoptix.dll from nvidial-libs only.,NVIDIA
+vkreflex,PROTON_VKREFLEX,"Enables DXVK-NVAPI's Vulkan Reflex layer to support Reflex in Vulkan games. It's meant to enable Reflex in games such as Portal RTX, Path of Exile 1 and 2 and Doom TDA, etc.",NVIDIA
+mediaconv,PROTON_ENABLE_MEDIACONV,"For debugging purposes, do not use.",debugging
+,PROTON_MEDIA_USE_GST,Fixes video/audio playback in cutscenes in some cases.,debugging
+,PROTON_GST_VIDEO_ORIENTATION,Change the orientation (rotation) of videos rendered using gstreamer. The accepted values are the same as gstreamer's videoflip plugin,
+nowmdecoration,PROTON_NO_WM_DECORATION,"Disable window decorations by the the window manager, use wine's own window decorations.",debugging
+wayland,PROTON_ENABLE_WAYLAND,"Enable Wayland support. If something that uses Electron/CEF doesn't work after enabling Wayland support, try adding --in-process-gpu to the command arguments. Run Steam with -steamos3 to allow Steam Input work with this option. For other options related to winewayland.drv refer to Proton-EM documentation",
+wayland,PROTON_USE_WAYLAND,Alias of PROTON_ENABLE_WAYLAND,common
+hdr,PROTON_ENABLE_HDR,,
+sdlinput,PROTON_PREFER_SDL,,
+sdlinput,PROTON_USE_SDL,Alias of PROTON_PREFER_SDL,debugging
+,PROTON_NO_STEAMINPUT,,debugging
+localshadercache,PROTON_LOCAL_SHADER_CACHE,"Enable per-game shader cache even if ""Shader Pre-caching"" is disabled. Any configuration set by this option can be overriden, i.e. if one of the environment variables is already set, the user-set value will be used. The default configuration is set up to mimic Steam's ""Shader Pre-Caching"", with shaders being cached under <steamlibrary>/shadercache/<appid> for each game.",
+,,,
+Proton-EM Config Options | Etaash-mathamsetty,,,
+,,,
+,,,
+Compat config string,Environment Variable,Description,Vendor Specific
+,PROTON_LOG,"Convenience method for dumping a useful debug log to $PROTON_LOG_DIR/steam-$APPID.log. Set to 1 to enable default logging, or set to a string to be appended to the default WINEDEBUG channels.",
+,PROTON_LOG_DIR,Output log files into the directory specified. Defaults to your home directory.,
+,PROTON_WAIT_ATTACH,"Wait for a debugger to attach to steam.exe before launching the game process. To attach to the game process at startup, debuggers should be set to follow child processes.",
+,PROTON_CRASH_REPORT_DIR,"Write crash logs into this directory. Does not clean up old logs, so may eat all your disk space eventually.",
+wined3d,PROTON_USE_WINED3D,"Use OpenGL-based wined3d instead of Vulkan-based DXVK for d3d11, d3d10, and d3d9.",
+nod3d11,PROTON_NO_D3D11,"Disable d3d11.dll, for d3d11 games which can fall back to and run better with d3d9.",
+nod3d10,PROTON_NO_D3D10,"Disable d3d10.dll and dxgi.dll, for d3d10 games which can fall back to and run better with d3d9.",
+dxvkd3d8,PROTON_DXVK_D3D8,Use DXVK's d3d8.dll.,
+noesync,PROTON_NO_ESYNC,Do not use eventfd-based in-process synchronization primitives.,
+nofsync,PROTON_NO_FSYNC,Do not use futex-based in-process synchronization primitives. (Automatically disabled on systems with no FUTEX_WAIT_MULTIPLE support.),
+,HOST_LC_ALL,Set value to a locale to override all other system locale settings for a game. This variable should be used instead of LC_ALL.,
+disablenvapi,PROTON_DISABLE_NVAPI,Disable NVIDIA's NVAPI GPU support library.,
+nativevulkanloader,,"Use the Vulkan loader shipped with the game instead of Proton's built-in Vulkan loader. This breaks VR support, but is required by a few games.",
+forcelgadd,PROTON_FORCE_LARGE_ADDRESS_AWARE,Force Wine to enable the LARGE_ADDRESS_AWARE flag for all executables. Enabled by default.,
+heapdelayfree,PROTON_HEAP_DELAY_FREE,"Delay freeing some memory, to work around application use-after-free bugs.",
+gamedrive,PROTON_SET_GAME_DRIVE,Create an S: drive which points to the Steam Library which contains the game.,
+noforcelgadd,,"Disable forcelgadd. If both this and forcelgadd are set, enabled wins.",
+oldglstr,PROTON_OLD_GL_STRING,"Set some driver overrides to limit the length of the GL extension string, for old games that crash on very long extension strings.",
+vkd3dfl12,,"Force the Direct3D 12 feature level to 12, regardless of driver support.",
+vkd3dbindlesstb,,Put force_bindless_texel_buffer into VKD3D_CONFIG.,
+nomfdxgiman,WINE_DO_NOT_CREATE_DXGI_DEVICE_MANAGER,Enable hack to work around video issues in some games due to incomplete IMFDXGIDeviceManager support.,
+noopwr,WINE_DISABLE_VULKAN_OPWR,Enable hack to disable Vulkan other process window rendering which sometimes causes issues on Wayland due to blit being one frame behind.,
+hidenvgpu,PROTON_HIDE_NVIDIA_GPU,"Force Nvidia GPUs to always be reported as AMD GPUs. Some games require this if they depend on Windows-only Nvidia driver functionality. See also DXVK's nvapiHack config, which only affects reporting from Direct3D.",
+,WINE_FULLSCREEN_INTEGER_SCALING,"Enable integer scaling mode, to give sharp pixels when upscaling.",
+cmdlineappend:,,Append the string after the colon as an argument to the game command. May be specified more than once. Escape commas and backslashes with a backslash.,
+xalia or noxalia,PROTON_USE_XALIA,"Enable Xalia, a program that can add a gamepad UI for some keyboard/mouse interfaces, or set to 0 to disable. The default is to enable it dynamically based on window contents.",
+fnad3d11,FNA3D_FORCE_DRIVER=D3D11,Force FNA to use D3D11 for rendering.,
+seccomp,PROTON_USE_SECCOMP,"Note: Obsoleted in Proton 5.13. In older versions, enable seccomp-bpf filter to emulate native syscalls, required for some DRM protections to work.",
+d9vk,PROTON_USE_D9VK,"Note: Obsoleted in Proton 5.0. In older versions, use Vulkan-based DXVK instead of OpenGL-based wined3d for d3d9.",
+,,,
+Proton-GE Config Options | GloriousEggroll,,,
+,,,
+,,,
+Compat config string,Environment Variable,Description,Vendor Specific
+,PROTON_LOG,"Convenience method for dumping a useful debug log to $HOME/steam-$APPID.log. For more thorough logging, use user_settings.py.",
+,PROTON_DUMP_DEBUG_COMMANDS,"When running a game, Proton will write some useful debug scripts for that game into $PROTON_DEBUG_DIR/proton_$USER/.",
+,PROTON_DEBUG_DIR,"Root directory for the Proton debug scripts, /tmp by default.",
+wined3d,PROTON_USE_WINED3D,"Use OpenGL-based wined3d instead of Vulkan-based DXVK for d3d11 and d3d10. This used to be called PROTON_USE_WINED3D11, which is now an alias for this same option.",
+nod3d12,PROTON_NO_D3D12,Disables DX12.,
+nod3d11,PROTON_NO_D3D11,Disables DX11.,
+nod3d10,PROTON_NO_D3D10,Disables DX10.,
+nod3d9,PROTON_NO_D3D9,Disables DX9.,
+noesync,PROTON_NO_ESYNC,Do not use eventfd-based in-process synchronization primitives.,
+nofsync,PROTON_NO_FSYNC,Do not use futex-based in-process synchronization primitives. (Automatically disabled on systems with no FUTEX_WAIT_MULTIPLE support.),
+nontsync,PROTON_NO_NTSYNC,Do not use the ntsync kernel module for in-process synchronization primitives.,
+forcelgadd,PROTON_FORCE_LARGE_ADDRESS_AWARE,Force Wine to enable the LARGE_ADDRESS_AWARE flag for all executables.,
+heapdelayfree,PROTON_HEAP_DELAY_FREE,"Delay freeing some memory, to work around application use-after-free bugs.",
+,HOST_LC_ALL,Set value to a locale to override all other system locale settings for a game. This variable should be used instead of LC_ALL.,
+enablenvapi,PROTON_ENABLE_NVAPI,Enable NVIDIA's NVAPI GPU support library.,
+noforcelgadd,,"Disable forcelgadd. If both this and forcelgadd are set, enabled wins.",
+oldglstr,PROTON_OLD_GL_STRING,"Set some driver overrides to limit the length of the GL extension string, for old games that crash on very long extension strings.",
+cmdlineappend:,,Append the string after the colon as an argument to the game command. May be specified more than once. Escape commas and backslashes with a backslash.,
+xalia or noxalia,PROTON_USE_XALIA,"Enable Xalia, a program that can add a gamepad UI for some keyboard/mouse interfaces, or set to 0 to disable. The default is to enable it dynamically based on window contents.",
+seccomp,PROTON_USE_SECCOMP,"Enable seccomp-bpf filter to emulate native syscalls, required for some DRM protections to work.",
+nowritewatch,PROTON_NO_WRITE_WATCH,Disable support for memory write watches in ntdll. This should only be applied if you have verified that the game can operate without write watches. This can improves performance for some very specific games.,
+,WINE_FULLSCREEN_FSR,"Enable AMD FidelityFX Super Resolution (FSR), use in conjunction with WINE_FULLSCREEN_FSR_STRENGTH. Only works in Vulkan games (DXVK and VKD3D-Proton included).",
+,WINE_FULLSCREEN_FSR_STRENGTH,"AMD FidelityFX Super Resolution (FSR) strength, the default sharpening of 5 is enough without needing modification, but can be changed with 0-5 if wanted. 0 is the maximum sharpness, higher values mean less sharpening. 2 is the AMD recommended default and is set by GE-Proton by default.",
+,WINE_FULLSCREEN_FSR_CUSTOM_MODE,Set fake resolution of the screen. This can be useful in games that render in native resolution regardless of the selected resolution. Parameter WIDTHxHEIGHT,
+,WINE_DO_NOT_CREATE_DXGI_DEVICE_MANAGER,Set to 1 to enable. Required for video playback in some games to not be miscolored (usually tinted pink),
+,COPYPREFIX,"Set to 1 to enable. If -steamdeck is used on steam (or SteamDeck=1 is set), copies the game's prefix and shader cache from the game partition to the local steam steamapps folder. Logic is reversed if -steamdeck not enabled (or SteamDeck=0)",
+fsr4,PROTON_FSR4_UPGRADE,"Automatically download amdxcffx64.dll and upgrade games with FSR 3.1 to use FSR 4. Version to download can be specified by supplying it as a value, like so PROTON_FSR4_UPGRADE=""4.0.1"", instead of 1. Downloads version 4.0.2 of the required DLL by default. This option also disables AMD Anti-Lag 2 currently due to various issues.",
+fsr4hud,PROTON_FSR4_INDICATOR,Enable the FSR4 watermark at the top left portion of the screen.,
+fsr4rdna3,PROTON_FSR4_RDNA3_UPGRADE,Identical to PROTON_FSR4_UPGRADE but for RDNA3 GPUs. Enables some required compatibility options and downloads version 4.0.0 of the DLL by default.,
+fsr3,PROTON_FSR3_UPGRADE,,
+dlss,PROTON_DLSS_UPGRADE,"Automatically download and use newer versions of nvngx_dlss(d|g).dll DLLs. Version to download can be specified by supplying it as a value, like so PROTON_DLSS_UPGRADE=""310.2"", instead of 1, to download version 310.2.1.0. This option also sets DXVK_NVAPI_DRS_SETTINGS to use the latest preset. If you provide your own config for it through this environment variable, your configuration is going to be applied..",
+dlsshud,PROTON_DLSS_INDICATOR,Enable the DLSS overlay at the bottom left portion of the screen. This is exactly the same as FSR4_WATERMARK=1,
+xess,PROTON_XESS_UPGRADE,,
+sdlinput,PROTON_USE_SDL or PROTON_PREFER_SDL,Uses SDL input instead of HIDRAW/Steam Input.,
+wayland,PROTON_USE_WAYLAND or PROTON_ENABLE_WAYLAND,Enables the Wayland driver.,
+wow64,PROTON_USE_WOW64,Enables wow64.,
+,WAYLANDDRV_PRIMARY_MONITOR,Specify primary monitor where the value is something like eDP-1. Requires the Wayland driver.,
+,PROTON_ENABLE_MEDIACONV,"Enable media converter for winegstreamer. This is not needed for winedmo, since the mediaconverter implementation of the codecs doesn't override the underlying implementation.",
+,WAYLANDDRV_RAWINPUT,A value of 0 disables unaccelerated input and uses accelerated input. Any positive real number (like 0.5) adjusts the sensitivity of rawinput. Requires the Wayland driver.,
+,,,
+Other Useful Config Options,,,
+,,,
+,,,
+Compat config string,Environment Variable,Description,Vendor Specific
+,GST_GL_WINDOW,,
+,DISABLE_LAYER_MESA_ANTI_LAG,,"AMD, NVIDIA, Intel"
+,WINE_BLOCK_HOSTS,"Provides a list of hosts for Wine to not connect to. The list can be either comma (,) or semicolon (;) separated, i.e WINE_BLOCK_HOSTS=host1.org,host2.net. The maximum number of hosts is 16 and the maximum length of each host is 256 characters.",debugging
+,WINEALSA_CHANNELS,"Allows to select more than two channels with the winealsa driver as well as force disable spatial audio in games. Can be useful with surround setups or when the sounds come out wrong positionally (like dialogue coming out only from the left speaker). Possible values is the number of speakers, such as 2 (to disable spatial audio), such as 4 (2 front, 2 rear), 6 (5.1) or 8 (7.1).",debugging
+,WINEALSA_SPATIAL,"Properly downmixes spatial with winealsa and includes the height channels. Use 1 to enable, 0 to disable (default). Recommended only if there are spatial audio errors with the WINEALSA_CHANNELS variable",debugging
+,WINEPULSE_FAST_POLLING,"Can help eliminate crackling with the default audio driver. Use 1 to enable, 0 to disable (default). Can cause rare crackling in God of War Ragnarok with the power of two quants (e.g. 512/768/1024)",debugging
+,,,
+Custom Config Options,,,
+,,,
+,,,
+Compat config string,Environment Variable,Description,Vendor Specific
+,ENABLE_LAYER_MESA_ANTI_LAG,activates AMD AntiLag 2 where supported and force AMD AntiLag in games without AntiLag 2,"AMD, common"
+,PROTON_ENABLE_NVAPI,activates NVIDIA API Support,NVIDIA
+,MANGOHUD,activates MangoHUD if installed,common
+,PROTON_USE_NTSYNC,activates NTSYNC,dafault

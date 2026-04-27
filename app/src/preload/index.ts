@@ -3,6 +3,7 @@ import { IPC } from '../shared/ipc-channels'
 import type {
   AppAboutInfo,
   AppSettings,
+  SteamCompatSnapshot,
   SymlinkHubOptions,
   SymlinkProgress,
   SteamAccount,
@@ -59,6 +60,8 @@ const realApi = {
 
   detectGpu: () => ipcRenderer.invoke(IPC.GPU_DETECT),
   getCompatInfo: (appId: number) => ipcRenderer.invoke(IPC.COMPAT_GET, appId),
+  getCompatSnapshot: (appIds: number[]): Promise<SteamCompatSnapshot> =>
+    ipcRenderer.invoke(IPC.COMPAT_SNAPSHOT, appIds),
   getGlobalEnvOverrides: (appId: number): Promise<Record<string, string>> =>
     ipcRenderer.invoke(IPC.STEAM_GET_GLOBAL_ENV, appId),
 

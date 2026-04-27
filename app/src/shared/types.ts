@@ -130,8 +130,24 @@ export interface AppSettings {
   theme: 'dark' | 'light' | 'system'
 }
 
+export type CompatSelectionKind = 'steam_default' | 'override' | 'native'
+
 export interface CompatToolInfo {
   toolName: string | null
   toolDescription: string | null
   sourceLabel: string
+  /** How this title relates to Steam’s global Steam Play default (CompatToolMapping "0"). */
+  selectionKind: CompatSelectionKind
+  /** Steam Play default tool id from config, for tooltips / context lines. */
+  steamDefaultToolName?: string | null
+  steamDefaultDescription?: string | null
+}
+
+/** Batch result: one Steam Play default + per installed app. */
+export interface SteamCompatSnapshot {
+  steamPlayDefault: {
+    toolName: string | null
+    toolDescription: string | null
+  }
+  perApp: Record<string, CompatToolInfo>
 }

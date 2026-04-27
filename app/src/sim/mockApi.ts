@@ -9,6 +9,8 @@ import { IPC } from '../shared/ipc-channels'
 import type {
   AppAboutInfo,
   AppSettings,
+  CompatToolInfo,
+  SteamCompatSnapshot,
   SymlinkHubOptions,
   SteamAccount, BatchTransformPreviewRequest, BatchTransformApplyRequest,
   BatchTransformResult, RestoreBackupResult,
@@ -21,9 +23,19 @@ import {
   MOCK_DLL_INFO,
   MOCK_SETTINGS,
   MOCK_COMPAT_INFO,
+  MOCK_STEAM_PLAY_DEFAULT,
   simulateSymlinkStream,
   simulateFsrStream,
 } from './mockData'
+
+const MOCK_COMPAT_FALLBACK: CompatToolInfo = {
+  toolName: MOCK_STEAM_PLAY_DEFAULT.toolName,
+  toolDescription: MOCK_STEAM_PLAY_DEFAULT.toolDescription,
+  sourceLabel: 'Steam default',
+  selectionKind: 'steam_default',
+  steamDefaultToolName: MOCK_STEAM_PLAY_DEFAULT.toolName,
+  steamDefaultDescription: MOCK_STEAM_PLAY_DEFAULT.toolDescription,
+}
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
@@ -123,7 +135,15 @@ export const mockApi = {
   // ── Compat tool ────────────────────────────────────────────────────────────
   getCompatInfo: async (appId: number) => {
     await delay(60)
-    return MOCK_COMPAT_INFO[appId] ?? { toolName: null, toolDescription: 'global default', sourceLabel: 'global' }
+    return MOCK_COMPAT_INFO[appId] ?? MOCK_COMPAT_FALLBACK
+  },
+  getCompatSnapshot: async (appIds: number[]): Promise<SteamCompatSnapshot> => {
+    await delay(80)
+    const perApp: Record<string, CompatToolInfo> = {}
+    for (const id of appIds) {
+      perApp[String(id)] = MOCK_COMPAT_INFO[id] ?? MOCK_COMPAT_FALLBACK
+    }
+    return { steamPlayDefault: MOCK_STEAM_PLAY_DEFAULT, perApp }
   },
   getGlobalEnvOverrides: async (appId: number): Promise<Record<string, string>> => {
     await delay(60)

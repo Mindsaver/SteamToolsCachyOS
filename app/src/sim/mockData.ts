@@ -197,17 +197,95 @@ export const MOCK_SETTINGS: AppSettings = {
   theme: 'dark',
 }
 
+/** Simulated Steam Play default (CompatToolMapping "0"). */
+export const MOCK_STEAM_PLAY_DEFAULT = {
+  toolName: 'proton_experimental' as string | null,
+  toolDescription: 'Proton Experimental' as string | null,
+}
+
+const SD = MOCK_STEAM_PLAY_DEFAULT
+
 export const MOCK_COMPAT_INFO: Record<number, CompatToolInfo> = {
-  1091500: { toolName: 'proton_experimental', toolDescription: 'Proton Experimental', sourceLabel: 'per-game' },
-  1245620: { toolName: 'proton_90', toolDescription: 'Proton 9.0', sourceLabel: 'per-game' },
-  292030:  { toolName: 'proton_90', toolDescription: 'Proton 9.0', sourceLabel: 'per-game' },
-  1623730: { toolName: null, toolDescription: 'Steam Linux native', sourceLabel: 'per-game (none)' },
-  1174180: { toolName: 'proton_experimental', toolDescription: 'Proton Experimental', sourceLabel: 'per-game' },
-  2050650: { toolName: 'proton_90', toolDescription: 'Proton 9.0', sourceLabel: 'per-game' },
-  271590:  { toolName: 'proton_hotfix', toolDescription: 'Proton Hotfix', sourceLabel: 'per-game' },
-  1086940: { toolName: 'proton_experimental', toolDescription: 'Proton Experimental', sourceLabel: 'per-game' },
-  1938090: { toolName: 'proton_experimental', toolDescription: 'Proton Experimental', sourceLabel: 'per-game' },
-  2144740: { toolName: 'proton_90', toolDescription: 'Proton 9.0', sourceLabel: 'per-game' },
+  1091500: {
+    toolName: 'proton_experimental',
+    toolDescription: 'Proton Experimental',
+    sourceLabel: 'Steam default',
+    selectionKind: 'steam_default',
+    steamDefaultToolName: SD.toolName,
+    steamDefaultDescription: SD.toolDescription,
+  },
+  1245620: {
+    toolName: 'proton_90',
+    toolDescription: 'Proton 9.0',
+    sourceLabel: 'Per-game override',
+    selectionKind: 'override',
+    steamDefaultToolName: SD.toolName,
+    steamDefaultDescription: SD.toolDescription,
+  },
+  292030: {
+    toolName: 'proton_90',
+    toolDescription: 'Proton 9.0',
+    sourceLabel: 'Per-game override',
+    selectionKind: 'override',
+    steamDefaultToolName: SD.toolName,
+    steamDefaultDescription: SD.toolDescription,
+  },
+  1623730: {
+    toolName: null,
+    toolDescription: 'Steam Linux native',
+    sourceLabel: 'Linux native (per-game)',
+    selectionKind: 'native',
+    steamDefaultToolName: SD.toolName,
+    steamDefaultDescription: SD.toolDescription,
+  },
+  1174180: {
+    toolName: 'proton_experimental',
+    toolDescription: 'Proton Experimental',
+    sourceLabel: 'Steam default',
+    selectionKind: 'steam_default',
+    steamDefaultToolName: SD.toolName,
+    steamDefaultDescription: SD.toolDescription,
+  },
+  2050650: {
+    toolName: 'proton_90',
+    toolDescription: 'Proton 9.0',
+    sourceLabel: 'Per-game override',
+    selectionKind: 'override',
+    steamDefaultToolName: SD.toolName,
+    steamDefaultDescription: SD.toolDescription,
+  },
+  271590: {
+    toolName: 'proton_hotfix',
+    toolDescription: 'Proton Hotfix',
+    sourceLabel: 'Per-game override',
+    selectionKind: 'override',
+    steamDefaultToolName: SD.toolName,
+    steamDefaultDescription: SD.toolDescription,
+  },
+  1086940: {
+    toolName: 'proton_experimental',
+    toolDescription: 'Proton Experimental',
+    sourceLabel: 'Steam default',
+    selectionKind: 'steam_default',
+    steamDefaultToolName: SD.toolName,
+    steamDefaultDescription: SD.toolDescription,
+  },
+  1938090: {
+    toolName: 'proton_experimental',
+    toolDescription: 'Proton Experimental',
+    sourceLabel: 'Steam default',
+    selectionKind: 'steam_default',
+    steamDefaultToolName: SD.toolName,
+    steamDefaultDescription: SD.toolDescription,
+  },
+  2144740: {
+    toolName: 'proton_90',
+    toolDescription: 'Proton 9.0',
+    sourceLabel: 'Per-game override',
+    selectionKind: 'override',
+    steamDefaultToolName: SD.toolName,
+    steamDefaultDescription: SD.toolDescription,
+  },
 }
 
 /** Simulate a streamed symlink-hub run, calling cb once per tick. */

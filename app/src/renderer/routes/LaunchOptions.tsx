@@ -25,7 +25,14 @@ import {
   diffTokens,
 } from '../../shared/launchOptions/compose'
 import type { LaunchOptionsModel, ClassifiedToken, DiffToken } from '../../shared/launchOptions/compose'
-import type { InstalledGame, GpuInfo, SteamAccount, BatchOp, BatchTransformPreviewRow } from '../../shared/types'
+import type {
+  CompatToolInfo,
+  InstalledGame,
+  GpuInfo,
+  SteamAccount,
+  BatchOp,
+  BatchTransformPreviewRow,
+} from '../../shared/types'
 
 // ── Token chip rendering helpers ─────────────────────────────────────────────
 
@@ -106,6 +113,9 @@ export function LaunchOptions() {
 
   // ── Global env (user_settings.py) ──────────────────────────────────────
   const [globalEnv, setGlobalEnv] = useState<Record<string, string>>({})
+  /** Steam Play default from config.vdf CompatToolMapping "0" */
+  const [steamPlayDefault, setSteamPlayDefault] = useState<{ toolName: string | null; toolDescription: string | null } | null>(null)
+  const [compatByApp, setCompatByApp] = useState<Map<number, CompatToolInfo>>(new Map())
 
   // ── Saving ──────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false)
@@ -121,9 +131,20 @@ export function LaunchOptions() {
       api.listGames(),
       api.listAccounts(),
     ])
-    setGames(gameList ?? [])
+    const gamesArr = gameList ?? []
+    setGames(gamesArr)
     setAccounts(accs ?? [])
     if (accs?.length && !accountId) setAccountId(accs[0].accountId)
+
+    try {
+      const snap = await api.getCompatSnapshot(gamesArr.map((g) => g.appId))
+      setSteamPlayDefault(snap.steamPlayDefault)
+      setCompatByApp(new Map(Object.entries(snap.perApp).map(([k, v]) => [Number(k), v])))
+    } catch {
+      setSteamPlayDefault(null)
+      setCompatByApp(new Map())
+    }
+
     setLoading(false)
   }, [accountId])
 
@@ -339,11 +360,24 @@ export function LaunchOptions() {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-muted-foreground">
             <Switch checked={showTools} onCheckedChange={setShowTools} />
             Show Proton runtimes & tools
           </label>
+          {steamPlayDefault?.toolDescription ? (
+            <span className="text-xs text-muted-foreground">
+              Steam Play default:{' '}
+              <span className="font-medium text-foreground">{steamPlayDefault.toolDescription}</span>
+            </span>
+          ) : (
+            <span
+              className="text-xs text-muted-foreground"
+              title={'Nothing under CompatToolMapping "0" in Steam config/config.vdf — set a default in Steam Settings → Steam Play.'}
+            >
+              Steam Play default: not set in Steam config
+            </span>
+          )}
           {steamRunning && (
             <div className="flex items-center gap-1.5 text-xs text-amber-400">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -366,6 +400,7 @@ export function LaunchOptions() {
               onSelectionChange={handleSelectionChange}
               searchValue={search}
               onSearchChange={setSearch}
+              compatByApp={compatByApp.size > 0 ? compatByApp : undefined}
             />
           )}
         </div>
@@ -381,6 +416,7 @@ export function LaunchOptions() {
           {selCount === 1 && singleGame && (
             <SingleGameEditor
               game={singleGame}
+              compatInfo={compatByApp.get(singleGame.appId) ?? null}
               editValue={editValue}
               baseline={baseline}
               model={model}
@@ -449,6 +485,7 @@ export function LaunchOptions() {
 
 interface SingleGameEditorProps {
   game: InstalledGame
+  compatInfo: CompatToolInfo | null
   editValue: string
   baseline: string
   model: LaunchOptionsModel
@@ -465,7 +502,7 @@ interface SingleGameEditorProps {
 }
 
 function SingleGameEditor({
-  game, editValue, baseline, model, isDirty, steamRunning, saving, gpuInfo, globalEnv,
+  game, compatInfo, editValue, baseline, model, isDirty, steamRunning, saving, gpuInfo, globalEnv,
   onRawChange, onModelChange, onSave, onRevert, onCopyTo,
 }: SingleGameEditorProps) {
   const charCount = editValue.length
@@ -481,12 +518,40 @@ function SingleGameEditor({
   return (
     <div className="flex flex-col h-full">
       {/* Game header — fixed */}
-      <div className="px-4 pt-4 pb-2 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <h2 className="font-semibold truncate">{game.name}</h2>
-          {isDirty && <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" title="Unsaved changes (Ctrl+S to save)" />}
+      <div className="px-4 pt-4 pb-2 shrink-0 space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className="font-semibold truncate">{game.name}</h2>
+            {isDirty && <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" title="Unsaved changes (Ctrl+S to save)" />}
+          </div>
+          <Badge variant="secondary" className="text-xs shrink-0 ml-2">#{game.appId}</Badge>
         </div>
-        <Badge variant="secondary" className="text-xs shrink-0 ml-2">#{game.appId}</Badge>
+        {compatInfo && (
+          <p className="text-xs text-muted-foreground leading-snug">
+            {compatInfo.selectionKind === 'native' && (
+              <>Compatibility tool: Linux native (forced for this title).</>
+            )}
+            {compatInfo.selectionKind === 'steam_default' && (
+              compatInfo.toolDescription ? (
+                <>
+                  Compatibility tool: <span className="text-foreground">{compatInfo.toolDescription}</span>
+                  {' '}— matches Steam Play default.
+                </>
+              ) : (
+                <>Compatibility tool follows Steam Play default (not listed in Steam config).</>
+              )
+            )}
+            {compatInfo.selectionKind === 'override' && compatInfo.toolDescription && (
+              <>
+                Compatibility tool: <span className="text-foreground">{compatInfo.toolDescription}</span>
+                {' '}(custom).
+                {compatInfo.steamDefaultDescription && (
+                  <> Steam Play default is <span className="text-foreground">{compatInfo.steamDefaultDescription}</span>.</>
+                )}
+              </>
+            )}
+          </p>
+        )}
       </div>
 
       {/* Structured panel — fills all remaining space, scrolls internally */}
