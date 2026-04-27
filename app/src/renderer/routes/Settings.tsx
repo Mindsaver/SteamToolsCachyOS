@@ -22,9 +22,11 @@ export function Settings() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULTS)
   const [saving, setSaving] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [appVersion, setAppVersion] = useState<string | null>(null)
 
   useEffect(() => {
     api.getSettings().then(setSettings)
+    void api.getAboutInfo().then((i) => setAppVersion(i.version))
   }, [])
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
@@ -65,6 +67,19 @@ export function Settings() {
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="text-muted-foreground mt-1">Configure paths, behavior, and appearance</p>
       </div>
+
+      {/* Version — same source as Help → About (package / release build) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Application</CardTitle>
+          <CardDescription>Installed build (electron-updater compares against GitHub Releases)</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="font-mono text-sm tabular-nums">
+            Version <span className="text-foreground">{appVersion ?? '…'}</span>
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Steam path */}
       <Card>

@@ -490,7 +490,7 @@ function SingleGameEditor({
       </div>
 
       {/* Structured panel — fills all remaining space, scrolls internally */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4">
+      <div className="flex flex-1 flex-col min-h-0 overflow-y-auto px-4">
         <StructuredPanel
           model={model}
           onModelChange={onModelChange}
@@ -663,7 +663,7 @@ function MultiGameEditor({
       </div>
 
       {/* Structured panel — fills remaining vertical space, scrolls internally */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4">
+      <div className="flex flex-1 flex-col min-h-0 overflow-y-auto px-4">
         <StructuredPanel
           model={model}
           onModelChange={onModelChange}

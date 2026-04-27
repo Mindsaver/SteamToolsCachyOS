@@ -26,9 +26,14 @@ const NAV_ITEMS = [
 
 export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [appVersion, setAppVersion] = useState<string | null>(null)
 
   useEffect(() => {
     return api.onShowAbout(() => setAboutOpen(true))
+  }, [])
+
+  useEffect(() => {
+    void api.getAboutInfo().then((i) => setAppVersion(i.version))
   }, [])
 
   return (
@@ -51,6 +56,12 @@ export default function App() {
                 )}
               </div>
               <p className="text-xs text-muted-foreground leading-none mt-0.5">CachyOS</p>
+              <p
+                className="text-[10px] font-mono text-muted-foreground/80 tabular-nums mt-1.5"
+                title="App version"
+              >
+                {appVersion ? `v${appVersion}` : 'v…'}
+              </p>
             </div>
           </div>
         </div>

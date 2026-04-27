@@ -134,7 +134,7 @@ export function StructuredPanel({
   const tabFeatures = currentTab?.features ?? []
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-1 flex-col gap-3 min-h-0 w-full">
       {isLocked && (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
           <Lock className="h-3.5 w-3.5 shrink-0" />
@@ -672,7 +672,7 @@ function EnvPresetsTab({
         )}
       </div>
 
-      <div className="space-y-4 overflow-y-auto max-h-72 pr-0.5">
+      <div className="space-y-4 pr-0.5">
         {activeFiltered.length > 0 && (
           <PresetGroup
             title="Active here"
