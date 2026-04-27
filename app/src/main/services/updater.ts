@@ -7,14 +7,20 @@ import { IPC } from '../../shared/ipc-channels'
 import log from 'electron-log'
 
 /**
- * Linux: electron-updater defaults to AppImageUpdater, which disables itself when
- * `APPIMAGE` is unset (dev, extracted `--appimage-extract` installs, menu → AppRun).
- * GitHub releases ship a `.pacman` artifact — use PacmanUpdater for that layout only.
- * Installed .deb/.rpm/.pacman packages include `resources/package-type`; keep default selection.
+ * Linux: electron-updater defaults to AppImageUpdater, which logs a warning whenever
+ * `APPIMAGE` is unset — including dev (`!app.isPackaged`) and extracted `--appimage-extract` installs.
+ * Use PacmanUpdater when there is no AppImage layout and no distro package marker (`package-type`).
+ * Installed .deb/.rpm/.pacman system packages ship `resources/package-type`; keep default selection.
  */
 function resolveAutoUpdater(): AppUpdater {
-  if (process.platform === 'linux' && app.isPackaged && process.env.SNAP == null) {
-    let pkgType: string | null = null
+  if (process.platform !== 'linux' || process.env.SNAP != null) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('electron-updater') as typeof import('electron-updater')
+    return mod.autoUpdater
+  }
+
+  let pkgType: string | null = null
+  if (app.isPackaged) {
     try {
       const typePath = path.join(process.resourcesPath, 'package-type')
       if (fs.existsSync(typePath)) {
@@ -23,12 +29,14 @@ function resolveAutoUpdater(): AppUpdater {
     } catch {
       /* ignore */
     }
-    if (pkgType == null && process.env.APPIMAGE == null) {
-      log.info('[updater] No APPIMAGE / package-type — using PacmanUpdater (extracted AppImage / portable Linux)')
-      return new PacmanUpdater()
-    }
   }
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy init picks deb/rpm/pacman via package-type
+
+  if (process.env.APPIMAGE == null && pkgType == null) {
+    log.info('[updater] Linux without APPIMAGE / package-type — using PacmanUpdater (dev or extracted layout)')
+    return new PacmanUpdater()
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- AppImage (.AppImage + APPIMAGE) or deb/rpm/pacman via package-type
   const mod = require('electron-updater') as typeof import('electron-updater')
   return mod.autoUpdater
 }
