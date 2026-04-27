@@ -104,13 +104,6 @@ export async function runSymlinkHub(
 
   for (const game of games) {
     done++
-    onProgress({
-      type: 'progress',
-      message: `[${done}/${games.length}] ${game.name}`,
-      current: done,
-      total: games.length,
-    })
-
     let safeName = sanitizeDirname(game.name) || `app-${game.appId}`
     const count = nameCount.get(safeName) ?? 0
     if (count > 0) safeName = `${safeName} (${game.appId})`
@@ -121,24 +114,34 @@ export async function runSymlinkHub(
     const prefixLink = path.join(gameDir, 'compatdata_prefix')
     const sys32Link = path.join(gameDir, 'compatdata_windows_system32')
 
+    onProgress({
+      type: 'progress',
+      message: `[${done}/${games.length}] ${game.name}`,
+      current: done,
+      total: games.length,
+    })
+    onProgress({ type: 'log', message: `  folder  ${gameDir}` })
+
     if (mode !== 'dll') {
       if (!dryRun) fs.mkdirSync(gameDir, { recursive: true })
 
       ensureSymlink(game.installPath, commonLink, dryRun)
+      onProgress({ type: 'log', message: `  link    common → ${game.installPath}` })
 
       if (game.compatDataPath) {
         ensureSymlink(game.compatDataPath, prefixLink, dryRun)
-      } else {
-        removeIfExists(prefixLink, dryRun)
+        onProgress({ type: 'log', message: `  link    compatdata_prefix → ${game.compatDataPath}` })
       }
 
       if (game.system32Path) {
         ensureSymlink(game.system32Path, sys32Link, dryRun)
+        onProgress({ type: 'log', message: `  link    compatdata_windows_system32 → ${game.system32Path}` })
       } else {
         removeIfExists(sys32Link, dryRun)
       }
 
       writeStartInSteamDesktop(path.join(gameDir, 'Start in Steam.desktop'), game.appId, dryRun)
+      onProgress({ type: 'log', message: `  file    Start in Steam.desktop` })
 
       // Userdata symlinks
       if (hasUserData) {
@@ -157,7 +160,7 @@ export async function runSymlinkHub(
         const udLink = path.join(gameDir, 'userdata')
         if (udPaths.length === 1) {
           ensureSymlink(udPaths[0], udLink, dryRun)
-          // Clean numbered variants
+          onProgress({ type: 'log', message: `  link    userdata → ${udPaths[0]}` })
           if (!dryRun) {
             try {
               const entries = fs.readdirSync(gameDir)
@@ -173,12 +176,12 @@ export async function runSymlinkHub(
           for (const p of udPaths) {
             const accId = path.basename(path.dirname(p))
             ensureSymlink(p, path.join(gameDir, `userdata_${accId}`), dryRun)
+            onProgress({ type: 'log', message: `  link    userdata_${accId} → ${p}` })
           }
-        } else {
-          removeIfExists(udLink, dryRun)
         }
       }
     }
+    onProgress({ type: 'log', message: '' })
 
     // DLL copy
     if (mode !== 'folders' && dllPath && game.system32Path) {

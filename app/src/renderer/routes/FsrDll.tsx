@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Play, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
@@ -9,12 +9,24 @@ import { LogStream } from '../components/LogStream'
 import { api } from '../lib/ipc'
 import type { DllVersionInfo, SymlinkProgress } from '../../shared/types'
 
+const IS_SIM = typeof window !== 'undefined' && (window as Window & { api?: { __simMode?: boolean } }).api?.__simMode === true
+
 export function FsrDll() {
-  const [dllPath, setDllPath] = useState<string | null>(null)
+  const [dllPath, setDllPath] = useState<string | null>(IS_SIM ? '/home/arch/Downloads/amdxcffx64.dll' : null)
   const [dllInfo, setDllInfo] = useState<DllVersionInfo | null>(null)
-  const [analyzing, setAnalyzing] = useState(false)
+  const [analyzing, setAnalyzing] = useState(IS_SIM)
   const [copying, setCopying] = useState(false)
   const [logs, setLogs] = useState<SymlinkProgress[]>([])
+
+  // In sim mode auto-load the mock DLL info on mount
+  useEffect(() => {
+    if (IS_SIM) {
+      api.analyzeDll('/home/arch/Downloads/amdxcffx64.dll').then((result) => {
+        setAnalyzing(false)
+        if (result?.ok) setDllInfo(result.data)
+      })
+    }
+  }, [])
 
   const handleFileSelected = async (path: string) => {
     setDllPath(path)

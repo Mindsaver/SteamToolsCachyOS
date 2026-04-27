@@ -60,9 +60,52 @@ export interface LaunchOptionsUpdate {
   options: string
 }
 
-export interface BatchLaunchUpdate {
-  snippet: string
+export interface SteamAccount {
+  accountId: string
+  persona: string | null
+}
+
+export type BatchOp = 'set' | 'prefix' | 'suffix' | 'replace' | 'clear' | 'snippet'
+
+export interface BatchTransformParams {
+  op: BatchOp
+  setValue?: string
+  prefix?: string
+  suffix?: string
+  find?: string
+  replaceWith?: string
+  snippet?: string
+}
+
+export interface BatchTransformPreviewRequest {
   appIds: number[]
+  accountId: string
+  params: BatchTransformParams
+}
+
+export interface BatchTransformPreviewRow {
+  appId: number
+  name: string
+  before: string
+  after: string
+}
+
+export interface BatchTransformApplyRequest {
+  rows: Array<{ appId: number; after: string }>
+  accountId: string
+}
+
+export interface BatchTransformResult {
+  ok: boolean
+  written?: number
+  backup?: string
+  error?: string
+}
+
+export interface RestoreBackupResult {
+  ok: boolean
+  restoredFrom?: string
+  error?: string
 }
 
 export interface UpdateInfo {

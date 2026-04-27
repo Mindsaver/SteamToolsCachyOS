@@ -5,12 +5,14 @@ export const IPC = {
   STEAM_GET_INFO: 'steam:get-info',
   STEAM_IS_RUNNING: 'steam:is-running',
   STEAM_CLOSE: 'steam:close',
+  STEAM_LIST_ACCOUNTS: 'steam:list-accounts',
 
   // Games
   GAMES_LIST: 'games:list',
   GAMES_GET_LAUNCH_OPTIONS: 'games:get-launch-options',
   GAMES_SET_LAUNCH_OPTIONS: 'games:set-launch-options',
-  GAMES_BATCH_LAUNCH_OPTIONS: 'games:batch-launch-options',
+  GAMES_BATCH_TRANSFORM_PREVIEW: 'games:batch-transform-preview',
+  GAMES_BATCH_TRANSFORM_APPLY: 'games:batch-transform-apply',
 
   // Symlink hub
   SYMLINK_RUN: 'symlink:run',
@@ -26,6 +28,10 @@ export const IPC = {
 
   // Compat tool context
   COMPAT_GET: 'compat:get',
+
+  // Localconfig
+  LOCALCONFIG_RESTORE_BACKUP: 'localconfig:restore-backup',
+  LOCALCONFIG_OPEN_FOLDER: 'localconfig:open-folder',
 
   // Settings
   SETTINGS_GET: 'settings:get',

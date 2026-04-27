@@ -29,7 +29,7 @@ export function LogStream({ lines, className }: LogStreamProps) {
         <div
           key={i}
           className={cn(
-            'leading-5',
+            'leading-5 whitespace-pre-wrap break-all',
             line.type === 'error' && 'text-destructive',
             line.type === 'done' && 'text-green-400 font-semibold',
             line.type === 'log' && 'text-muted-foreground',

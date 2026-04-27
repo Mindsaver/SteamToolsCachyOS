@@ -3,9 +3,14 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+const SIM = process.env.VITE_SIM === '1'
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    define: {
+      'import.meta.env.VITE_SIM': JSON.stringify(SIM ? '1' : ''),
+    },
     build: {
       rollupOptions: {
         input: {
@@ -16,6 +21,9 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    define: {
+      'import.meta.env.VITE_SIM': JSON.stringify(SIM ? '1' : ''),
+    },
     build: {
       rollupOptions: {
         input: {
@@ -32,5 +40,8 @@ export default defineConfig({
       },
     },
     plugins: [react(), tailwindcss()],
+    define: {
+      'import.meta.env.VITE_SIM': JSON.stringify(SIM ? '1' : ''),
+    },
   },
 })

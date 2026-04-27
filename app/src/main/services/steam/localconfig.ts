@@ -139,3 +139,113 @@ export function getCacheDir(): string {
   const xdgCache = process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache')
   return path.join(xdgCache, 'SteamToolsCachyOS')
 }
+
+// ── Account discovery ──────────────────────────────────────────────────────
+
+export function listAccounts(userDataPath: string): Array<{ accountId: string; persona: string | null }> {
+  const accounts: Array<{ accountId: string; persona: string | null }> = []
+  if (!fs.existsSync(userDataPath)) return accounts
+
+  // Try to read loginusers.vdf for persona names
+  const loginUsers = path.join(path.dirname(userDataPath), 'config', 'loginusers.vdf')
+  const personaMap = new Map<string, string>()
+  if (fs.existsSync(loginUsers)) {
+    try {
+      const raw = fs.readFileSync(loginUsers, 'utf-8')
+      const data = vdf.parse(raw) as Record<string, unknown>
+      const users = data['users'] || data['Users']
+      if (users && typeof users === 'object') {
+        for (const [, userData] of Object.entries(users as Record<string, unknown>)) {
+          if (userData && typeof userData === 'object') {
+            const u = userData as Record<string, unknown>
+            const steamId = String(u['SteamID'] ?? u['steamid'] ?? '')
+            const persona = String(u['PersonaName'] ?? u['personaname'] ?? '')
+            if (steamId && persona) personaMap.set(steamId, persona)
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  try {
+    const dirs = fs.readdirSync(userDataPath, { withFileTypes: true })
+    for (const d of dirs) {
+      if (!d.isDirectory()) continue
+      const lc = path.join(userDataPath, d.name, 'config', 'localconfig.vdf')
+      if (fs.existsSync(lc)) {
+        accounts.push({ accountId: d.name, persona: personaMap.get(d.name) ?? null })
+      }
+    }
+  } catch { /* ignore */ }
+  return accounts
+}
+
+// ── Batch read/write ───────────────────────────────────────────────────────
+
+export function readAllLaunchOptionsForAccount(
+  userDataPath: string,
+  accountId: string
+): Map<string, string> {
+  const lc = path.join(userDataPath, accountId, 'config', 'localconfig.vdf')
+  if (!fs.existsSync(lc)) return new Map()
+  return readLaunchOptions(lc)
+}
+
+export function batchWriteLaunchOptions(
+  userDataPath: string,
+  accountId: string,
+  updates: Map<string, string>
+): string {
+  const lc = path.join(userDataPath, accountId, 'config', 'localconfig.vdf')
+  const raw = fs.readFileSync(lc, 'utf-8')
+  const data = vdf.parse(raw) as Record<string, unknown>
+
+  const appsPath = ['UserLocalConfigStore', 'Software', 'Valve', 'Steam', 'Apps']
+  let apps = getNestedKey(data, appsPath) as Record<string, unknown> | undefined
+  if (!apps) {
+    setNestedKey(data, appsPath, {})
+    apps = getNestedKey(data, appsPath) as Record<string, unknown>
+  }
+
+  for (const [appId, value] of updates) {
+    const existingKey = Object.keys(apps).find((k) => k === appId) ?? appId
+    if (!apps[existingKey] || typeof apps[existingKey] !== 'object') {
+      apps[existingKey] = {}
+    }
+    const appEntry = apps[existingKey] as Record<string, unknown>
+    if (value.trim() === '') {
+      delete appEntry['LaunchOptions']
+      delete appEntry['launchoptions']
+    } else {
+      appEntry['LaunchOptions'] = value
+    }
+  }
+
+  const bakPath = lc + '.steamtools.bak'
+  if (!fs.existsSync(bakPath)) {
+    fs.copyFileSync(lc, bakPath)
+  }
+
+  const serialized = vdf.stringify(data)
+  const tmpPath = lc + '.tmp'
+  fs.writeFileSync(tmpPath, serialized, 'utf-8')
+  fs.renameSync(tmpPath, lc)
+
+  return bakPath
+}
+
+// ── Backup ─────────────────────────────────────────────────────────────────
+
+export function latestBackupPath(userDataPath: string, accountId: string): string | null {
+  const lc = path.join(userDataPath, accountId, 'config', 'localconfig.vdf')
+  const bak = lc + '.steamtools.bak'
+  return fs.existsSync(bak) ? bak : null
+}
+
+export function restoreBackup(userDataPath: string, accountId: string): string {
+  const lc = path.join(userDataPath, accountId, 'config', 'localconfig.vdf')
+  const bak = lc + '.steamtools.bak'
+  if (!fs.existsSync(bak)) throw new Error(`No backup found at ${bak}`)
+  fs.copyFileSync(bak, lc)
+  return bak
+}

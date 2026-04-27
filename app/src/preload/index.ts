@@ -3,28 +3,44 @@ import { IPC } from '../shared/ipc-channels'
 import type {
   AppSettings,
   SymlinkHubOptions,
-  BatchLaunchUpdate,
   SymlinkProgress,
+  SteamAccount,
+  BatchTransformPreviewRequest,
+  BatchTransformPreviewRow,
+  BatchTransformApplyRequest,
+  BatchTransformResult,
+  RestoreBackupResult,
 } from '../shared/types'
 
-// Expose a typed, sandboxed API to the renderer via contextBridge.
-// The renderer never touches ipcRenderer directly.
+// VITE_SIM is replaced at build time by electron-vite define.
+// When true the mock API is statically bundled in and exposed instead of IPC.
+const SIM = (import.meta.env['VITE_SIM'] ?? '') === '1'
 
-const api = {
-  // ── Steam ──────────────────────────────────────────────────────────────────
+// ── Real IPC API ─────────────────────────────────────────────────────────────
+
+const realApi = {
+  __simMode: false as boolean,
+
   getSteamInfo: () => ipcRenderer.invoke(IPC.STEAM_GET_INFO),
   isSteamRunning: () => ipcRenderer.invoke(IPC.STEAM_IS_RUNNING),
   closeSteam: () => ipcRenderer.invoke(IPC.STEAM_CLOSE),
+  listAccounts: (): Promise<SteamAccount[]> => ipcRenderer.invoke(IPC.STEAM_LIST_ACCOUNTS),
 
-  // ── Games ──────────────────────────────────────────────────────────────────
   listGames: () => ipcRenderer.invoke(IPC.GAMES_LIST),
   getLaunchOptions: (appId: number) => ipcRenderer.invoke(IPC.GAMES_GET_LAUNCH_OPTIONS, appId),
   setLaunchOptions: (appId: number, options: string) =>
     ipcRenderer.invoke(IPC.GAMES_SET_LAUNCH_OPTIONS, { appId, options }),
-  batchSetLaunchOptions: (payload: BatchLaunchUpdate) =>
-    ipcRenderer.invoke(IPC.GAMES_BATCH_LAUNCH_OPTIONS, payload),
 
-  // ── Symlink hub ────────────────────────────────────────────────────────────
+  previewBatchTransform: (req: BatchTransformPreviewRequest): Promise<BatchTransformPreviewRow[]> =>
+    ipcRenderer.invoke(IPC.GAMES_BATCH_TRANSFORM_PREVIEW, req),
+  applyBatchTransform: (req: BatchTransformApplyRequest): Promise<BatchTransformResult> =>
+    ipcRenderer.invoke(IPC.GAMES_BATCH_TRANSFORM_APPLY, req),
+
+  restoreBackup: (accountId: string): Promise<RestoreBackupResult> =>
+    ipcRenderer.invoke(IPC.LOCALCONFIG_RESTORE_BACKUP, { accountId }),
+  openLocalconfigFolder: (accountId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.LOCALCONFIG_OPEN_FOLDER, { accountId }),
+
   runSymlinkHub: (options: SymlinkHubOptions) => ipcRenderer.invoke(IPC.SYMLINK_RUN, options),
   onSymlinkProgress: (cb: (p: SymlinkProgress) => void) => {
     const handler = (_: unknown, p: SymlinkProgress) => cb(p)
@@ -32,7 +48,6 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.SYMLINK_PROGRESS, handler)
   },
 
-  // ── FSR DLL ────────────────────────────────────────────────────────────────
   analyzeDll: (filePath: string) => ipcRenderer.invoke(IPC.FSR_ANALYZE_DLL, filePath),
   copyDll: (dllPath: string) => ipcRenderer.invoke(IPC.FSR_COPY_DLL, { dllPath }),
   onFsrProgress: (cb: (p: SymlinkProgress) => void) => {
@@ -41,17 +56,12 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.FSR_PROGRESS, handler)
   },
 
-  // ── GPU ────────────────────────────────────────────────────────────────────
   detectGpu: () => ipcRenderer.invoke(IPC.GPU_DETECT),
-
-  // ── Compat tool ────────────────────────────────────────────────────────────
   getCompatInfo: (appId: number) => ipcRenderer.invoke(IPC.COMPAT_GET, appId),
 
-  // ── Settings ───────────────────────────────────────────────────────────────
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.SETTINGS_GET),
   setSettings: (settings: AppSettings) => ipcRenderer.invoke(IPC.SETTINGS_SET, settings),
 
-  // ── Updates ────────────────────────────────────────────────────────────────
   checkForUpdates: () => ipcRenderer.invoke(IPC.UPDATE_CHECK),
   downloadUpdate: () => ipcRenderer.invoke(IPC.UPDATE_DOWNLOAD),
   installUpdate: () => ipcRenderer.invoke(IPC.UPDATE_INSTALL),
@@ -71,13 +81,22 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.UPDATE_PROGRESS, handler)
   },
 
-  // ── Dialogs & shell ────────────────────────────────────────────────────────
   openFileDialog: (filters?: Electron.FileFilter[]) =>
     ipcRenderer.invoke(IPC.DIALOG_OPEN_FILE, { filters }),
   openDirDialog: () => ipcRenderer.invoke(IPC.DIALOG_OPEN_DIR),
   openPath: (p: string) => ipcRenderer.invoke(IPC.SHELL_OPEN_PATH, p),
 }
 
-contextBridge.exposeInMainWorld('api', api)
+export type Api = typeof realApi
 
-export type Api = typeof api
+// ── Expose via contextBridge ──────────────────────────────────────────────────
+// Static import of mock — when SIM=false, tree-shaking removes it from the bundle.
+// We must use a static top-level import (not require()) so electron-vite bundles
+// the mock inline rather than trying to resolve it at runtime from disk.
+import { mockApi } from '../sim/mockApi'
+
+if (SIM) {
+  contextBridge.exposeInMainWorld('api', mockApi)
+} else {
+  contextBridge.exposeInMainWorld('api', realApi)
+}

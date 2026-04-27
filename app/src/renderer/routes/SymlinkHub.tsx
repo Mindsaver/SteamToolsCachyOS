@@ -9,10 +9,9 @@ import { Input } from '../components/ui/input'
 import { Progress } from '../components/ui/progress'
 import { LogStream } from '../components/LogStream'
 import { api } from '../lib/ipc'
-import type { SymlinkProgress, SymlinkMode, GameFilter } from '../../shared/types'
+import type { SymlinkProgress, GameFilter } from '../../shared/types'
 
 export function SymlinkHub() {
-  const [mode, setMode] = useState<SymlinkMode>('folders')
   const [filter, setFilter] = useState<GameFilter>('heuristic')
   const [hubRoot, setHubRoot] = useState('')
   const [dryRun, setDryRun] = useState(false)
@@ -38,7 +37,7 @@ export function SymlinkHub() {
     })
 
     const result = await api.runSymlinkHub({
-      mode,
+      mode: 'folders',
       filter,
       hubRoot: hubRoot || undefined,
       dryRun,
@@ -61,27 +60,11 @@ export function SymlinkHub() {
         <p className="text-muted-foreground mt-1">
           Create <code className="text-xs bg-muted px-1 py-0.5 rounded">~/SteamToolsCachyOS/&lt;Game&gt;/</code> folders
           with symlinks to each game's install dir, Proton prefix, system32, and userdata.
+          To copy the FSR DLL into game prefixes, use the <strong>FSR DLL</strong> page.
         </p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Mode</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Select
-              value={mode}
-              onChange={(e) => setMode(e.target.value as SymlinkMode)}
-              className="w-full"
-            >
-              <option value="folders">Folders only (symlinks + desktop shortcuts)</option>
-              <option value="all">All (folders + DLL copy)</option>
-              <option value="dll">DLL copy only</option>
-            </Select>
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm">Game filter</CardTitle>
@@ -97,26 +80,26 @@ export function SymlinkHub() {
             </Select>
           </CardContent>
         </Card>
-      </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Hub directory</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
-            <Input
-              value={hubRoot}
-              onChange={(e) => setHubRoot(e.target.value)}
-              placeholder={`Default: ~/SteamToolsCachyOS`}
-              className="flex-1"
-            />
-            <Button variant="outline" onClick={handleBrowseHub} size="icon">
-              <FolderOpen className="h-4 w-4" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Hub directory</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-2">
+              <Input
+                value={hubRoot}
+                onChange={(e) => setHubRoot(e.target.value)}
+                placeholder="Default: ~/SteamToolsCachyOS"
+                className="flex-1"
+              />
+              <Button variant="outline" onClick={handleBrowseHub} size="icon">
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="flex items-center gap-6">
         <label className="flex items-center gap-2 cursor-pointer select-none">

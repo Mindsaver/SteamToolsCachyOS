@@ -8,6 +8,7 @@
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:sim": "cross-env VITE_SIM=1 electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "package": "npm run build && electron-builder",
@@ -41,6 +42,7 @@
     "autoprefixer": "10.4.21",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "cross-env": "^10.1.0",
     "electron": "41.3.0",
     "electron-builder": "26.8.1",
     "electron-vite": "5.0.0",

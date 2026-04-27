@@ -1,213 +1,636 @@
-import React, { useEffect, useState, useCallback } from 'react'
-import { Save, RefreshCw, AlertTriangle, Layers, Wand2 } from 'lucide-react'
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import {
+  Save, RefreshCw, AlertTriangle, FolderOpen, Undo2, Copy, X, ChevronDown, ChevronUp,
+} from 'lucide-react'
 import { toast } from 'sonner'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { Card } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Textarea } from '../components/ui/textarea'
 import { Badge } from '../components/ui/badge'
+import { Select } from '../components/ui/select'
+import { Input } from '../components/ui/input'
+import { Switch } from '../components/ui/switch'
 import { GameTable } from '../components/GameTable'
 import { StructuredPanel } from '../components/StructuredPanel'
 import { SteamStatusPill } from '../components/SteamStatusPill'
-import { Select } from '../components/ui/select'
+import { CopyToGamesDialog } from '../components/CopyToGamesDialog'
 import { api } from '../lib/ipc'
-import { BATCH_SNIPPETS } from '../components/StructuredPanel'
-import type { InstalledGame, GpuInfo, CompatToolInfo } from '../../shared/types'
+import {
+  parseLaunchOptions,
+  serializeLaunchOptions,
+  transformLaunchOptions,
+  BATCH_SNIPPETS,
+  COMMAND_TOKEN,
+} from '../../shared/launchOptions/compose'
+import type { LaunchOptionsModel } from '../../shared/launchOptions/compose'
+import type { InstalledGame, GpuInfo, SteamAccount, BatchOp, BatchTransformPreviewRow } from '../../shared/types'
+
+// ── Batch op metadata ──────────────────────────────────────────────────────
+
+const BATCH_OPS: { value: BatchOp; label: string; needsEditor: boolean }[] = [
+  { value: 'set', label: 'Replace completely', needsEditor: true },
+  { value: 'prefix', label: 'Add at start', needsEditor: true },
+  { value: 'suffix', label: 'Add at end', needsEditor: true },
+  { value: 'replace', label: 'Find & replace', needsEditor: false },
+  { value: 'clear', label: 'Remove all options', needsEditor: false },
+  { value: 'snippet', label: 'Insert preset', needsEditor: false },
+]
 
 export function LaunchOptions() {
+  // ── Data state ─────────────────────────────────────────────────────────
   const [games, setGames] = useState<InstalledGame[]>([])
   const [loading, setLoading] = useState(true)
   const [steamRunning, setSteamRunning] = useState(false)
-  const [selected, setSelected] = useState<InstalledGame | null>(null)
-  const [editValue, setEditValue] = useState('')
-  const [saving, setSaving] = useState(false)
+  const [accounts, setAccounts] = useState<SteamAccount[]>([])
+  const [accountId, setAccountId] = useState<string>('')
   const [gpuInfo, setGpuInfo] = useState<GpuInfo | null>(null)
-  const [compatInfo, setCompatInfo] = useState<CompatToolInfo | null>(null)
+  const [showTools, setShowTools] = useState(false)
+  const [search, setSearch] = useState('')
 
-  // Batch
+  // ── Selection state ─────────────────────────────────────────────────────
+  const [selectedAppIds, setSelectedAppIds] = useState<Set<number>>(new Set())
+
+  // ── Editor state ────────────────────────────────────────────────────────
+  const [editValue, setEditValue] = useState('')
+  const [model, setModel] = useState<LaunchOptionsModel>(parseLaunchOptions(''))
+  const [baseline, setBaseline] = useState('')  // value when game was selected (for dirty check)
+  const syncing = useRef(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Batch multi-select state ─────────────────────────────────────────────
+  const [batchOp, setBatchOp] = useState<BatchOp>('prefix')
+  const [batchFindText, setBatchFindText] = useState('')
+  const [batchReplaceText, setBatchReplaceText] = useState('')
   const [batchSnippet, setBatchSnippet] = useState(BATCH_SNIPPETS[0].snippet)
-  const [batchRunning, setBatchRunning] = useState(false)
+  const [batchPreview, setBatchPreview] = useState<BatchTransformPreviewRow[]>([])
+  const [batchPreviewed, setBatchPreviewed] = useState(false)
+  const [batchApplying, setBatchApplying] = useState(false)
+  const [batchPreviewOpen, setBatchPreviewOpen] = useState(false)
 
-  const loadGames = useCallback(async () => {
+  // ── Copy-to dialog ──────────────────────────────────────────────────────
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false)
+
+  // ── Saving ──────────────────────────────────────────────────────────────
+  const [saving, setSaving] = useState(false)
+
+  const selCount = selectedAppIds.size
+  const singleGame = selCount === 1 ? games.find((g) => selectedAppIds.has(g.appId)) ?? null : null
+  const isDirty = editValue !== baseline
+
+  // ── Load ────────────────────────────────────────────────────────────────
+  const loadAll = useCallback(async () => {
     setLoading(true)
-    const list = await api.listGames()
-    setGames(list ?? [])
+    const [gameList, accs] = await Promise.all([
+      api.listGames(),
+      api.listAccounts(),
+    ])
+    setGames(gameList ?? [])
+    setAccounts(accs ?? [])
+    if (accs?.length && !accountId) setAccountId(accs[0].accountId)
     setLoading(false)
-  }, [])
+  }, [accountId])
 
   useEffect(() => {
-    loadGames()
+    loadAll()
     api.detectGpu().then(setGpuInfo)
   }, [])
 
-  const handleSelectGame = async (game: InstalledGame) => {
-    setSelected(game)
-    setEditValue(game.launchOptions ?? '')
-    const compat = await api.getCompatInfo(game.appId)
-    setCompatInfo(compat)
+  // Reload launch options from selected game whenever account switches
+  useEffect(() => {
+    if (singleGame) {
+      const v = singleGame.launchOptions ?? ''
+      setEditValue(v)
+      setBaseline(v)
+      syncing.current = true
+      setModel(parseLaunchOptions(v))
+      syncing.current = false
+    }
+  }, [accountId])
+
+  // ── Game filter ─────────────────────────────────────────────────────────
+  const displayGames = useMemo(() => {
+    if (showTools) return games
+    return games.filter((g) => g.compatDataPath !== null || g.launchOptions)
+  }, [games, showTools])
+
+  // ── Selection handling ──────────────────────────────────────────────────
+  const handleSelectionChange = useCallback((ids: Set<number>) => {
+    setSelectedAppIds(ids)
+    if (ids.size === 1) {
+      const game = games.find((g) => ids.has(g.appId))
+      if (game) {
+        const v = game.launchOptions ?? ''
+        setEditValue(v)
+        setBaseline(v)
+        syncing.current = true
+        setModel(parseLaunchOptions(v))
+        syncing.current = false
+      }
+    } else {
+      // Multi or zero: reset editor to empty
+      setEditValue('')
+      setBaseline('')
+      syncing.current = true
+      setModel(parseLaunchOptions(''))
+      syncing.current = false
+    }
+    // Reset batch state
+    setBatchPreviewed(false)
+    setBatchPreview([])
+  }, [games])
+
+  // ── Raw ↔ Structured sync ────────────────────────────────────────────────
+  const handleRawChange = (v: string) => {
+    setEditValue(v)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      if (syncing.current) return
+      syncing.current = true
+      setModel(parseLaunchOptions(v))
+      syncing.current = false
+    }, 160)
   }
 
+  const handleModelChange = (newModel: LaunchOptionsModel) => {
+    if (syncing.current) return
+    syncing.current = true
+    const newValue = serializeLaunchOptions(newModel)
+    setModel(newModel)
+    setEditValue(newValue)
+    syncing.current = false
+  }
+
+  // ── Save single ─────────────────────────────────────────────────────────
   const handleSave = async () => {
-    if (!selected) return
-    if (steamRunning) {
-      toast.error('Close Steam before saving launch options')
-      return
-    }
+    if (!singleGame || steamRunning) return
     setSaving(true)
-    const result = await api.setLaunchOptions(selected.appId, editValue)
+    const result = await api.setLaunchOptions(singleGame.appId, editValue)
     setSaving(false)
     if (result?.ok) {
-      toast.success(`Saved launch options for ${selected.name}`)
-      setGames((prev) =>
-        prev.map((g) => (g.appId === selected.appId ? { ...g, launchOptions: editValue } : g))
-      )
-      setSelected((s) => (s ? { ...s, launchOptions: editValue } : s))
+      toast.success(`Saved for ${singleGame.name}`)
+      setBaseline(editValue)
+      setGames((prev) => prev.map((g) => g.appId === singleGame.appId ? { ...g, launchOptions: editValue } : g))
     } else {
       toast.error(result?.error ?? 'Save failed')
     }
   }
 
+  const handleRevert = () => {
+    setEditValue(baseline)
+    syncing.current = true
+    setModel(parseLaunchOptions(baseline))
+    syncing.current = false
+  }
+
+  // ── Batch preview ─────────────────────────────────────────────────────────
+  const buildBatchParams = () => {
+    const currentOp = BATCH_OPS.find((o) => o.value === batchOp)!
+    if (batchOp === 'replace') return { op: batchOp, find: batchFindText, replaceWith: batchReplaceText }
+    if (batchOp === 'clear') return { op: batchOp }
+    if (batchOp === 'snippet') return { op: batchOp, snippet: batchSnippet }
+    // set / prefix / suffix: use editValue as the payload
+    return { op: batchOp, setValue: editValue, prefix: editValue, suffix: editValue }
+  }
+
+  const handleBatchPreview = async () => {
+    const params = buildBatchParams()
+    const appIds = Array.from(selectedAppIds)
+    // Compute locally for speed (same logic as server)
+    const rows: BatchTransformPreviewRow[] = appIds.map((appId) => {
+      const game = games.find((g) => g.appId === appId)!
+      const before = game.launchOptions ?? ''
+      const after = transformLaunchOptions(before, params)
+      return { appId, name: game.name, before, after }
+    })
+    setBatchPreview(rows)
+    setBatchPreviewed(true)
+    setBatchPreviewOpen(true)
+  }
+
   const handleBatchApply = async () => {
-    if (steamRunning) {
-      toast.error('Close Steam before applying batch changes')
-      return
-    }
-    setBatchRunning(true)
-    const allIds = games.map((g) => g.appId)
-    const result = await api.batchSetLaunchOptions({ snippet: batchSnippet, appIds: allIds })
-    setBatchRunning(false)
+    if (!batchPreviewed || !batchPreview.length || steamRunning) return
+    setBatchApplying(true)
+    const result = await api.applyBatchTransform({
+      rows: batchPreview.map(({ appId, after }) => ({ appId, after })),
+      accountId,
+    })
+    setBatchApplying(false)
     if (result?.ok) {
-      toast.success(`Applied "${batchSnippet}" to ${allIds.length} games`)
-      await loadGames()
+      toast.success(`Applied to ${result.written} games`)
+      setBatchPreviewed(false)
+      setBatchPreview([])
+      setBatchPreviewOpen(false)
+      await loadAll()
     } else {
-      toast.error(result?.error ?? 'Batch apply failed')
+      toast.error(result?.error ?? 'Apply failed')
     }
   }
 
+  // ── Toolbar helpers ─────────────────────────────────────────────────────
+  const handleUndoBackup = async () => {
+    if (!accountId) return
+    const result = await api.restoreBackup(accountId)
+    if (result?.ok) {
+      toast.success(`Restored from ${result.restoredFrom}`)
+      await loadAll()
+    } else {
+      toast.error(result?.error ?? 'Restore failed')
+    }
+  }
+
+  const handleOpenFolder = () => {
+    if (accountId) api.openLocalconfigFolder(accountId)
+  }
+
+  // ── Determine which batch op needs what inputs ──────────────────────────
+  const currentOpMeta = BATCH_OPS.find((o) => o.value === batchOp)!
+
   return (
     <div className="flex flex-col h-full">
-      <div className="p-6 pb-3 space-y-3 border-b border-border">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Launch Options</h1>
-            <p className="text-muted-foreground mt-0.5 text-sm">
-              Edit per-game or batch Steam launch options. Steam must be closed to write.
-            </p>
-          </div>
+      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
+      <div className="p-4 pb-3 border-b border-border space-y-2.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h1 className="text-xl font-bold tracking-tight mr-1">Launch Options</h1>
           <SteamStatusPill onStatusChange={setSteamRunning} />
-        </div>
-
-        {steamRunning && (
-          <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-400">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            Steam is running — writes are blocked. Close Steam above to enable saving.
-          </div>
-        )}
-
-        {/* Batch operations */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-1.5">
-              <Layers className="h-4 w-4" />
-              Batch apply to all games
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-2 items-center flex-wrap">
+          <div className="ml-auto flex items-center gap-2 flex-wrap">
+            {/* Account picker */}
+            {accounts.length > 1 && (
               <Select
-                value={batchSnippet}
-                onChange={(e) => setBatchSnippet(e.target.value)}
-                className="w-64"
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
+                className="h-8 text-xs w-48"
               >
-                {BATCH_SNIPPETS.map((s) => (
-                  <option key={s.id} value={s.snippet}>
-                    {s.label}
+                {accounts.map((a) => (
+                  <option key={a.accountId} value={a.accountId}>
+                    {a.persona ? `${a.persona} (${a.accountId})` : a.accountId}
                   </option>
                 ))}
               </Select>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleBatchApply}
-                disabled={batchRunning || steamRunning}
-              >
-                <Wand2 className="h-3.5 w-3.5 mr-1.5" />
-                {batchRunning ? 'Applying…' : `Apply to all ${games.length} games`}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={loadGames}>
-                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                Reload
-              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={handleOpenFolder} title="Open Steam config folder" className="h-8">
+              <FolderOpen className="h-3.5 w-3.5 mr-1" />
+              Config folder
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleUndoBackup} title="Restore last backup" className="h-8">
+              <Undo2 className="h-3.5 w-3.5 mr-1" />
+              Undo last save
+            </Button>
+            <Button variant="ghost" size="sm" onClick={loadAll} className="h-8">
+              <RefreshCw className="h-3.5 w-3.5 mr-1" />
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-muted-foreground">
+            <Switch checked={showTools} onCheckedChange={setShowTools} />
+            Show Proton runtimes & tools
+          </label>
+          {steamRunning && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-400">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              Steam is running — saves are blocked
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
       </div>
 
+      {/* ── Main split ────────────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0">
         {/* Left: game table */}
-        <div className="w-1/2 border-r border-border p-4 min-h-0">
+        <div className="w-[45%] min-w-0 border-r border-border p-3 min-h-0 flex flex-col">
           {loading ? (
-            <div className="flex items-center justify-center h-full text-muted-foreground animate-pulse">
-              Loading games…
-            </div>
+            <div className="flex items-center justify-center h-full text-muted-foreground animate-pulse text-sm">Loading games…</div>
           ) : (
             <GameTable
-              games={games}
-              onSelectGame={handleSelectGame}
-              selectedAppId={selected?.appId}
+              games={displayGames}
+              selectedAppIds={selectedAppIds}
+              onSelectionChange={handleSelectionChange}
+              searchValue={search}
+              onSearchChange={setSearch}
             />
           )}
         </div>
 
-        {/* Right: editor */}
-        <div className="w-1/2 p-4 space-y-4 overflow-y-auto">
-          {!selected ? (
+        {/* Right: editor pane */}
+        <div className="flex-1 min-w-0 flex flex-col min-h-0 overflow-y-auto">
+          {selCount === 0 && (
             <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
               Select a game to edit its launch options
             </div>
-          ) : (
-            <>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <h2 className="font-semibold truncate">{selected.name}</h2>
-                  <Badge variant="secondary" className="text-xs shrink-0 ml-2">
-                    #{selected.appId}
-                  </Badge>
-                </div>
-                {compatInfo && (
-                  <p className="text-xs text-muted-foreground">
-                    Compat: {compatInfo.toolDescription ?? 'default'} ({compatInfo.sourceLabel})
-                  </p>
-                )}
-              </div>
+          )}
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Launch options
-                </label>
-                <Textarea
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  placeholder="e.g. mangohud gamemode %command%"
-                  className="font-mono text-sm h-24 resize-none"
-                  disabled={steamRunning}
-                  data-selectable
-                />
-              </div>
+          {selCount === 1 && singleGame && (
+            <SingleGameEditor
+              game={singleGame}
+              editValue={editValue}
+              model={model}
+              isDirty={isDirty}
+              steamRunning={steamRunning}
+              saving={saving}
+              gpuInfo={gpuInfo}
+              onRawChange={handleRawChange}
+              onModelChange={handleModelChange}
+              onSave={handleSave}
+              onRevert={handleRevert}
+              onCopyTo={() => setCopyDialogOpen(true)}
+            />
+          )}
 
-              <StructuredPanel value={editValue} onChange={setEditValue} gpuInfo={gpuInfo} />
-
-              <Button
-                onClick={handleSave}
-                disabled={saving || steamRunning || editValue === selected.launchOptions}
-                className="gap-2 w-full"
-              >
-                <Save className="h-4 w-4" />
-                {saving ? 'Saving…' : 'Save launch options'}
-              </Button>
-            </>
+          {selCount > 1 && (
+            <MultiGameEditor
+              selCount={selCount}
+              editValue={editValue}
+              model={model}
+              steamRunning={steamRunning}
+              gpuInfo={gpuInfo}
+              batchOp={batchOp}
+              batchFindText={batchFindText}
+              batchReplaceText={batchReplaceText}
+              batchSnippet={batchSnippet}
+              batchPreview={batchPreview}
+              batchPreviewed={batchPreviewed}
+              batchApplying={batchApplying}
+              batchPreviewOpen={batchPreviewOpen}
+              currentOpMeta={currentOpMeta}
+              onClearSelection={() => setSelectedAppIds(new Set())}
+              onRawChange={handleRawChange}
+              onModelChange={handleModelChange}
+              onBatchOpChange={(op) => { setBatchOp(op); setBatchPreviewed(false); setBatchPreview([]) }}
+              onBatchFindChange={(v) => { setBatchFindText(v); setBatchPreviewed(false) }}
+              onBatchReplaceChange={(v) => { setBatchReplaceText(v); setBatchPreviewed(false) }}
+              onBatchSnippetChange={(v) => { setBatchSnippet(v); setBatchPreviewed(false) }}
+              onPreview={handleBatchPreview}
+              onApply={handleBatchApply}
+              onTogglePreview={() => setBatchPreviewOpen((o) => !o)}
+            />
           )}
         </div>
       </div>
+
+      {/* Copy-to dialog */}
+      {singleGame && (
+        <CopyToGamesDialog
+          open={copyDialogOpen}
+          onOpenChange={setCopyDialogOpen}
+          sourceGame={singleGame}
+          sourceValue={editValue}
+          allGames={games}
+          accountId={accountId}
+          onDone={loadAll}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Single-game editor ───────────────────────────────────────────────────────
+
+interface SingleGameEditorProps {
+  game: InstalledGame
+  editValue: string
+  model: LaunchOptionsModel
+  isDirty: boolean
+  steamRunning: boolean
+  saving: boolean
+  gpuInfo: GpuInfo | null
+  onRawChange: (v: string) => void
+  onModelChange: (m: LaunchOptionsModel) => void
+  onSave: () => void
+  onRevert: () => void
+  onCopyTo: () => void
+}
+
+function SingleGameEditor({
+  game, editValue, model, isDirty, steamRunning, saving, gpuInfo,
+  onRawChange, onModelChange, onSave, onRevert, onCopyTo,
+}: SingleGameEditorProps) {
+  const charCount = editValue.length
+  const preview = editValue.trim() || COMMAND_TOKEN
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* Game header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 min-w-0">
+          <h2 className="font-semibold truncate">{game.name}</h2>
+          {isDirty && <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" title="Unsaved changes" />}
+        </div>
+        <Badge variant="secondary" className="text-xs shrink-0 ml-2">#{game.appId}</Badge>
+      </div>
+
+      {/* Structured panel */}
+      <StructuredPanel model={model} onModelChange={onModelChange} gpuInfo={gpuInfo} disabled={steamRunning} />
+
+      {/* Raw editor */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Raw launch options</label>
+        <Textarea
+          value={editValue}
+          onChange={(e) => onRawChange(e.target.value)}
+          placeholder={`e.g. mangohud gamemode ${COMMAND_TOKEN}`}
+          className="font-mono text-sm h-20 resize-none"
+          disabled={steamRunning}
+          data-selectable
+        />
+        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+          <span>{charCount} characters</span>
+        </div>
+      </div>
+
+      {/* Live preview */}
+      <div>
+        <p className="text-xs text-muted-foreground mb-1">Preview</p>
+        <code className="block text-xs font-mono bg-black/30 rounded px-3 py-2 text-green-400 break-all">{preview}</code>
+      </div>
+
+      {/* Action bar */}
+      <div className="flex gap-2 flex-wrap">
+        <Button variant="ghost" size="sm" onClick={onRevert} disabled={!isDirty}>
+          Revert
+        </Button>
+        <Button
+          size="sm"
+          onClick={onSave}
+          disabled={saving || steamRunning || !isDirty}
+          className="gap-1.5"
+        >
+          <Save className="h-3.5 w-3.5" />
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+        <Button variant="outline" size="sm" onClick={onCopyTo} className="gap-1.5 ml-auto">
+          <Copy className="h-3.5 w-3.5" />
+          Copy to other games…
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// ── Multi-game editor ────────────────────────────────────────────────────────
+
+interface MultiGameEditorProps {
+  selCount: number
+  editValue: string
+  model: LaunchOptionsModel
+  steamRunning: boolean
+  gpuInfo: GpuInfo | null
+  batchOp: BatchOp
+  batchFindText: string
+  batchReplaceText: string
+  batchSnippet: string
+  batchPreview: BatchTransformPreviewRow[]
+  batchPreviewed: boolean
+  batchApplying: boolean
+  batchPreviewOpen: boolean
+  currentOpMeta: typeof BATCH_OPS[number]
+  onClearSelection: () => void
+  onRawChange: (v: string) => void
+  onModelChange: (m: LaunchOptionsModel) => void
+  onBatchOpChange: (op: BatchOp) => void
+  onBatchFindChange: (v: string) => void
+  onBatchReplaceChange: (v: string) => void
+  onBatchSnippetChange: (v: string) => void
+  onPreview: () => void
+  onApply: () => void
+  onTogglePreview: () => void
+}
+
+function MultiGameEditor({
+  selCount, editValue, model, steamRunning, gpuInfo,
+  batchOp, batchFindText, batchReplaceText, batchSnippet,
+  batchPreview, batchPreviewed, batchApplying, batchPreviewOpen,
+  currentOpMeta,
+  onClearSelection, onRawChange, onModelChange, onBatchOpChange,
+  onBatchFindChange, onBatchReplaceChange, onBatchSnippetChange,
+  onPreview, onApply, onTogglePreview,
+}: MultiGameEditorProps) {
+  const editorDisabled = steamRunning || batchOp === 'clear' || batchOp === 'snippet' || batchOp === 'replace'
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2">
+        <Badge variant="secondary">{selCount} games selected</Badge>
+        <button onClick={onClearSelection} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-0.5">
+          <X className="h-3 w-3" /> Clear
+        </button>
+      </div>
+
+      {/* Op selector */}
+      <div>
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Operation</label>
+        <Select value={batchOp} onChange={(e) => onBatchOpChange(e.target.value as BatchOp)} className="w-full">
+          {BATCH_OPS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </Select>
+      </div>
+
+      {/* Op-specific inputs */}
+      {batchOp === 'replace' && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Find</label>
+            <Input value={batchFindText} onChange={(e) => onBatchFindChange(e.target.value)} placeholder="Text to find" className="h-8 text-xs" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Replace with</label>
+            <Input value={batchReplaceText} onChange={(e) => onBatchReplaceChange(e.target.value)} placeholder="Replacement" className="h-8 text-xs" />
+          </div>
+        </div>
+      )}
+
+      {batchOp === 'snippet' && (
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">Snippet to insert</label>
+          <Select value={batchSnippet} onChange={(e) => onBatchSnippetChange(e.target.value)} className="w-full">
+            {BATCH_SNIPPETS.map((s) => (
+              <option key={s.id} value={s.snippet}>{s.label}</option>
+            ))}
+          </Select>
+        </div>
+      )}
+
+      {batchOp === 'clear' && (
+        <Card className="px-3 py-2">
+          <p className="text-xs text-muted-foreground">This will remove all launch options for the {selCount} selected games.</p>
+        </Card>
+      )}
+
+      {/* Structured + Raw editor (for set/prefix/suffix) */}
+      {currentOpMeta.needsEditor && (
+        <>
+          <StructuredPanel model={model} onModelChange={onModelChange} gpuInfo={gpuInfo} disabled={editorDisabled} />
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              {batchOp === 'set' ? 'New value (replaces each game)' : batchOp === 'prefix' ? 'Prefix to add' : 'Suffix to add'}
+            </label>
+            <Textarea
+              value={editValue}
+              onChange={(e) => onRawChange(e.target.value)}
+              placeholder={`e.g. mangohud gamemode ${COMMAND_TOKEN}`}
+              className="font-mono text-sm h-20 resize-none"
+              disabled={editorDisabled}
+              data-selectable
+            />
+          </div>
+        </>
+      )}
+
+      {/* Action bar */}
+      <div className="flex gap-2 flex-wrap">
+        <Button variant="outline" size="sm" onClick={onPreview} disabled={batchOp === 'replace' && !batchFindText}>
+          Preview changes
+        </Button>
+        {batchPreviewed && (
+          <Button
+            size="sm"
+            onClick={onApply}
+            disabled={!batchPreviewed || !batchPreview.length || batchApplying || steamRunning}
+            className="gap-1.5"
+          >
+            <Save className="h-3.5 w-3.5" />
+            {batchApplying ? 'Applying…' : `Apply to ${batchPreview.length} games`}
+          </Button>
+        )}
+      </div>
+
+      {/* Before/After preview table */}
+      {batchPreviewed && batchPreview.length > 0 && (
+        <div className="space-y-1.5">
+          <button
+            onClick={onTogglePreview}
+            className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            {batchPreviewOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            {batchPreviewOpen ? 'Hide' : 'Show'} preview ({batchPreview.length} games)
+          </button>
+          {batchPreviewOpen && (
+            <div className="overflow-y-auto max-h-52 rounded-md border border-border">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-muted/80">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left font-medium text-muted-foreground w-1/3">Game</th>
+                    <th className="px-2 py-1.5 text-left font-medium text-muted-foreground w-1/3">Before</th>
+                    <th className="px-2 py-1.5 text-left font-medium text-muted-foreground w-1/3">After</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {batchPreview.map((row) => (
+                    <tr key={row.appId} className="border-t border-border/40 hover:bg-muted/20">
+                      <td className="px-2 py-1 font-medium truncate max-w-[150px]" title={row.name}>{row.name}</td>
+                      <td className="px-2 py-1 font-mono text-muted-foreground truncate max-w-[150px]" title={row.before}>{row.before || <em>empty</em>}</td>
+                      <td className="px-2 py-1 font-mono truncate max-w-[150px]" title={row.after}>{row.after || <em>empty</em>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -4,17 +4,21 @@ import os from 'os'
 import { IPC } from '../shared/ipc-channels'
 import { resolveSteamInstall, parseLibraryPaths, resolveUserDataPath, listSteamAccounts } from './services/steam/install'
 import { collectGames } from './services/steam/manifests'
-import { findLocalconfigs, readLaunchOptions, writeLaunchOption } from './services/steam/localconfig'
+import {
+  findLocalconfigs, readLaunchOptions, writeLaunchOption,
+  listAccounts, readAllLaunchOptionsForAccount, batchWriteLaunchOptions,
+  latestBackupPath, restoreBackup,
+} from './services/steam/localconfig'
 import { isSteamRunning, closeSteam } from './services/steam/processes'
 import { loadCompatMappings, getCompatInfo } from './services/steam/compat'
 import { runSymlinkHub } from './services/symlink/hub'
 import { analyzeDll } from './services/fsr/ffx'
 import { copyDllToGames } from './services/fsr/copy'
 import { detectGpuVendors } from './services/gpu/detect'
-import { mergeSnippetPrefix, removeSnippet } from './services/launchOptions/compose'
+import { transformLaunchOptions } from '../shared/launchOptions/compose'
 import { loadSettings, saveSettings } from './services/settings'
 import { checkForUpdates, downloadUpdate, installUpdate } from './services/updater'
-import type { SymlinkHubOptions, BatchLaunchUpdate } from '../shared/types'
+import type { SymlinkHubOptions, BatchTransformPreviewRequest, BatchTransformApplyRequest } from '../shared/types'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // ── Steam ──────────────────────────────────────────────────────────────────
@@ -36,6 +40,15 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.STEAM_CLOSE, async () => {
     await closeSteam()
     return !isSteamRunning()
+  })
+
+  ipcMain.handle(IPC.STEAM_LIST_ACCOUNTS, async () => {
+    const settings = loadSettings()
+    const installPath = settings.steamPath || resolveSteamInstall()
+    if (!installPath) return []
+    const userDataPath = resolveUserDataPath(installPath)
+    if (!userDataPath) return []
+    return listAccounts(userDataPath)
   })
 
   // ── Games ──────────────────────────────────────────────────────────────────
@@ -104,30 +117,38 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   })
 
-  ipcMain.handle(IPC.GAMES_BATCH_LAUNCH_OPTIONS, async (_e, { snippet, appIds }: BatchLaunchUpdate) => {
+  ipcMain.handle(IPC.GAMES_BATCH_TRANSFORM_PREVIEW, async (_e, req: BatchTransformPreviewRequest) => {
+    const settings = loadSettings()
+    const installPath = settings.steamPath || resolveSteamInstall()
+    if (!installPath) return []
+    const userDataPath = resolveUserDataPath(installPath)
+    if (!userDataPath) return []
+
+    const games = collectGames(parseLibraryPaths(installPath), settings.gameFilter)
+    const loMap = readAllLaunchOptionsForAccount(userDataPath, req.accountId)
+    const nameMap = new Map(games.map((g) => [g.appId, g.name]))
+
+    return req.appIds.map((appId) => {
+      const before = loMap.get(String(appId)) ?? ''
+      const after = transformLaunchOptions(before, req.params)
+      return { appId, name: nameMap.get(appId) ?? String(appId), before, after }
+    })
+  })
+
+  ipcMain.handle(IPC.GAMES_BATCH_TRANSFORM_APPLY, async (_e, req: BatchTransformApplyRequest) => {
     if (isSteamRunning()) {
       return { ok: false, error: 'Steam is running. Close Steam before writing launch options.' }
     }
     const settings = loadSettings()
     const installPath = settings.steamPath || resolveSteamInstall()
     if (!installPath) return { ok: false, error: 'Steam not found' }
-
     const userDataPath = resolveUserDataPath(installPath)
     if (!userDataPath) return { ok: false, error: 'No userdata path' }
 
-    const localconfigs = findLocalconfigs(userDataPath)
-    if (!localconfigs.length) return { ok: false, error: 'No localconfig.vdf found' }
-
     try {
-      for (const { filePath } of localconfigs) {
-        const loMap = readLaunchOptions(filePath)
-        for (const appId of appIds) {
-          const current = loMap.get(String(appId)) ?? ''
-          const updated = mergeSnippetPrefix(current, snippet)
-          writeLaunchOption(filePath, String(appId), updated)
-        }
-      }
-      return { ok: true }
+      const updates = new Map(req.rows.map(({ appId, after }) => [String(appId), after]))
+      const backup = batchWriteLaunchOptions(userDataPath, req.accountId, updates)
+      return { ok: true, written: req.rows.length, backup }
     } catch (e) {
       return { ok: false, error: String(e) }
     }
@@ -176,6 +197,32 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     } catch (e) {
       return { ok: false, error: String(e) }
     }
+  })
+
+  // ── Localconfig backup ─────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC.LOCALCONFIG_RESTORE_BACKUP, async (_e, { accountId }: { accountId: string }) => {
+    const settings = loadSettings()
+    const installPath = settings.steamPath || resolveSteamInstall()
+    if (!installPath) return { ok: false, error: 'Steam not found' }
+    const userDataPath = resolveUserDataPath(installPath)
+    if (!userDataPath) return { ok: false, error: 'No userdata path' }
+    try {
+      const restoredFrom = restoreBackup(userDataPath, accountId)
+      return { ok: true, restoredFrom }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IPC.LOCALCONFIG_OPEN_FOLDER, async (_e, { accountId }: { accountId: string }) => {
+    const settings = loadSettings()
+    const installPath = settings.steamPath || resolveSteamInstall()
+    if (!installPath) return
+    const userDataPath = resolveUserDataPath(installPath)
+    if (!userDataPath) return
+    const configDir = path.join(userDataPath, accountId, 'config')
+    await shell.openPath(configDir)
   })
 
   // ── GPU ────────────────────────────────────────────────────────────────────
