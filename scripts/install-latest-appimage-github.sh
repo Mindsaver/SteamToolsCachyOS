@@ -59,7 +59,7 @@ if not url:
     print('The Electron workflow must have uploaded this AppImage for that release.', file=sys.stderr)
     sys.exit(1)
 print(url)
-print(data.get('tag_name', ''))
+print(data.get('tag_name') or 'unknown')
 " "$TMPJSON" "$ASSET_NAME")
 rm -f "$TMPJSON"
 
