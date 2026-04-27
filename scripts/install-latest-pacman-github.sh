@@ -28,8 +28,7 @@ fi
 for cmd in curl python3 pacman; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "Missing required command: $cmd" >&2
-    echo "On non-Arch distros without pacman, use the AppImage extract installer instead:" >&2
-    echo "  scripts/install-latest-appimage-github.sh" >&2
+    echo "This installer requires pacman (Arch / CachyOS). Without it, download the .pacman from the latest GitHub Release and install on a pacman-based system." >&2
     exit 1
   fi
 done
