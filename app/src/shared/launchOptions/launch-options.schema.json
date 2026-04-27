@@ -1,0 +1,160 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "launch-options-catalog",
+  "title": "Launch Options Catalog",
+  "description": "Catalog of all configurable launch-option items. Each item declares its tab, input shape, section (serialization behavior), and optional relations. No 'kind' discriminant — section drives behavior.",
+  "type": "object",
+  "required": ["version", "tabs", "items"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "type": "integer", "enum": [1] },
+    "tabs": {
+      "type": "array",
+      "description": "Ordered list of tabs shown in the UI. Tab IDs are free-form strings referenced by items.",
+      "items": {
+        "type": "object",
+        "required": ["id", "label"],
+        "additionalProperties": false,
+        "properties": {
+          "id":    { "type": "string" },
+          "label": { "type": "string" },
+          "features": {
+            "type": "array",
+            "description": "Optional feature flags that enable tab-specific UX (e.g. 'filter', 'gpuGroups', 'triState', 'gamescopeMaster', 'gamescopeExtraArgs').",
+            "items": { "type": "string" }
+          },
+          "groups": {
+            "type": "array",
+            "description": "Optional ordered group definitions. Items reference groups by id.",
+            "items": {
+              "type": "object",
+              "required": ["id", "label"],
+              "additionalProperties": false,
+              "properties": {
+                "id":    { "type": "string" },
+                "label": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/Item" }
+    }
+  },
+  "definitions": {
+    "CatalogRelation": {
+      "type": "object",
+      "required": ["target", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "target": { "type": "string", "description": "ID of the target catalog item." },
+        "reason": { "type": "string", "description": "Human-readable explanation shown in the UI." }
+      }
+    },
+    "CatalogRelations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "conflictsWith": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/CatalogRelation" },
+          "description": "Items that must be turned OFF when this item is turned ON. Must be symmetric."
+        },
+        "implies": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/CatalogRelation" },
+          "description": "Items automatically turned ON when this item is turned ON. One-directional."
+        }
+      }
+    },
+    "Item": {
+      "oneOf": [
+        { "$ref": "#/definitions/EnvItem" },
+        { "$ref": "#/definitions/PrefixTokenItem" },
+        { "$ref": "#/definitions/GamescopeItem" }
+      ]
+    },
+    "EnvItem": {
+      "type": "object",
+      "required": ["id", "label", "tab", "section", "input", "valueType", "envKey", "envValue"],
+      "additionalProperties": false,
+      "properties": {
+        "id":          { "type": "string" },
+        "label":       { "type": "string" },
+        "description": { "type": "string" },
+        "docs":        { "type": "string", "format": "uri" },
+        "tab":         { "type": "string" },
+        "group":       { "type": "string" },
+        "order":       { "type": "number" },
+        "section":     { "type": "string", "const": "env" },
+        "input":       { "type": "string", "enum": ["toggle", "number", "enum", "text"] },
+        "valueType":   { "type": "string", "enum": ["bool", "int", "float", "string"] },
+        "options":     { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "min":         { "type": "number" },
+        "max":         { "type": "number" },
+        "step":        { "type": "number" },
+        "placeholder": { "type": "string" },
+        "tier":        { "type": "integer", "minimum": 1, "maximum": 4 },
+        "risk":        { "type": "string", "enum": ["safe", "experimental"] },
+        "gpuFamily":   { "type": "string", "enum": ["any", "amd", "nvidia"] },
+        "envKey":      { "type": "string" },
+        "envValue":    { "type": "string" },
+        "relations":   { "$ref": "#/definitions/CatalogRelations" }
+      }
+    },
+    "PrefixTokenItem": {
+      "type": "object",
+      "required": ["id", "label", "tab", "section", "input", "valueType", "token", "modelField"],
+      "additionalProperties": false,
+      "properties": {
+        "id":          { "type": "string" },
+        "label":       { "type": "string" },
+        "description": { "type": "string" },
+        "docs":        { "type": "string", "format": "uri" },
+        "tab":         { "type": "string" },
+        "group":       { "type": "string" },
+        "order":       { "type": "number" },
+        "section":     { "type": "string", "const": "prefix-token" },
+        "input":       { "type": "string", "enum": ["toggle", "number", "enum", "text"] },
+        "valueType":   { "type": "string", "enum": ["bool", "int", "float", "string"] },
+        "token":       { "type": "string", "description": "Literal token prepended to launch options (e.g. 'mangohud')." },
+        "modelField":  { "type": "string", "enum": ["mangohud", "gamemode", "gamePerformance"] },
+        "relations":   { "$ref": "#/definitions/CatalogRelations" }
+      }
+    },
+    "GamescopeItem": {
+      "type": "object",
+      "required": ["id", "label", "tab", "section", "input", "valueType", "field", "cliFlags"],
+      "additionalProperties": false,
+      "properties": {
+        "id":          { "type": "string" },
+        "label":       { "type": "string" },
+        "description": { "type": "string" },
+        "docs":        { "type": "string", "format": "uri" },
+        "tab":         { "type": "string" },
+        "group":       { "type": "string" },
+        "order":       { "type": "number" },
+        "section":     { "type": "string", "const": "gamescope" },
+        "input":       { "type": "string", "enum": ["toggle", "number", "enum", "text"] },
+        "valueType":   { "type": "string", "enum": ["bool", "int", "float", "string"] },
+        "field":       { "type": "string", "description": "Model key in GamescopeConfig.values. Unique across all gamescope items." },
+        "cliFlags":    {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^-" },
+          "description": "CLI flags. First entry is the canonical serialization form."
+        },
+        "options":     { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "min":         { "type": "number" },
+        "max":         { "type": "number" },
+        "step":        { "type": "number" },
+        "placeholder": { "type": "string" },
+        "relations":   { "$ref": "#/definitions/CatalogRelations" }
+      }
+    }
+  }
+}

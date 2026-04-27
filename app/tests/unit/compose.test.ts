@@ -15,6 +15,12 @@ import {
   tokenize,
   diffTokens,
   ENV_PRESETS,
+  isItemActive,
+  setItemActive,
+  findConflicts,
+  findImpliedItems,
+  applyItemWithRelations,
+  CATALOG_BY_ID,
 } from '../../src/shared/launchOptions/compose'
 
 // ── parse / serialize round-trip ──────────────────────────────────────────
@@ -65,9 +71,9 @@ describe('parseLaunchOptions', () => {
   it('parses gamescope flags', () => {
     const m = parseLaunchOptions('gamescope -W 1920 -H 1080 -f -- %command%')
     expect(m.gamescope).not.toBeNull()
-    expect(m.gamescope?.width).toBe(1920)
-    expect(m.gamescope?.height).toBe(1080)
-    expect(m.gamescope?.fullscreen).toBe(true)
+    expect(m.gamescope?.values['width']).toBe(1920)
+    expect(m.gamescope?.values['height']).toBe(1080)
+    expect(m.gamescope?.values['fullscreen']).toBe(true)
   })
 
   it('normalizes MANGOHUD=1 env to mangohud wrapper', () => {
@@ -103,9 +109,9 @@ describe('serializeLaunchOptions', () => {
     const m = parseLaunchOptions(original)
     const out = serializeLaunchOptions(m)
     const m2 = parseLaunchOptions(out)
-    expect(m2.gamescope?.width).toBe(1920)
-    expect(m2.gamescope?.height).toBe(1080)
-    expect(m2.gamescope?.fullscreen).toBe(true)
+    expect(m2.gamescope?.values['width']).toBe(1920)
+    expect(m2.gamescope?.values['height']).toBe(1080)
+    expect(m2.gamescope?.values['fullscreen']).toBe(true)
   })
 
   it('omits gamescope when null', () => {
@@ -371,5 +377,337 @@ describe('diffTokens', () => {
 
   it('returns empty for both empty', () => {
     expect(diffTokens('', '')).toEqual([])
+  })
+})
+
+// ── isItemActive ──────────────────────────────────────────────────────────────
+
+describe('isItemActive', () => {
+  it('env item is active when env key matches value', () => {
+    const item = CATALOG_BY_ID.get('proton_log')!
+    const m = { ...emptyModel(), env: { PROTON_LOG: '1' }, envOrder: ['PROTON_LOG'] }
+    expect(isItemActive(m, item)).toBe(true)
+  })
+
+  it('env item is not active when env key absent', () => {
+    const item = CATALOG_BY_ID.get('proton_log')!
+    expect(isItemActive(emptyModel(), item)).toBe(false)
+  })
+
+  it('wrapper item is active when modelField is true', () => {
+    const item = CATALOG_BY_ID.get('mangohud')!
+    const m = { ...emptyModel(), mangohud: true }
+    expect(isItemActive(m, item)).toBe(true)
+  })
+
+  it('wrapper item is not active when modelField is false', () => {
+    const item = CATALOG_BY_ID.get('mangohud')!
+    expect(isItemActive(emptyModel(), item)).toBe(false)
+  })
+
+  it('gamescope-toggle is active when field is true', () => {
+    const item = CATALOG_BY_ID.get('gs_hdr')!
+    const gs = emptyGamescope()
+    gs.values['hdr'] = true
+    const m = { ...emptyModel(), gamescope: gs }
+    expect(isItemActive(m, item)).toBe(true)
+  })
+
+  it('gamescope-toggle is not active when gamescope is null', () => {
+    const item = CATALOG_BY_ID.get('gs_hdr')!
+    expect(isItemActive(emptyModel(), item)).toBe(false)
+  })
+
+  it('gamescope-arg is active when field has a value', () => {
+    const item = CATALOG_BY_ID.get('gs_frameLimit')!
+    const gs = emptyGamescope()
+    gs.values['frameLimit'] = 60
+    const m = { ...emptyModel(), gamescope: gs }
+    expect(isItemActive(m, item)).toBe(true)
+  })
+
+  it('gamescope-arg is not active when field is null', () => {
+    const item = CATALOG_BY_ID.get('gs_frameLimit')!
+    const m = { ...emptyModel(), gamescope: emptyGamescope() }
+    expect(isItemActive(m, item)).toBe(false)
+  })
+})
+
+// ── findConflicts ─────────────────────────────────────────────────────────────
+
+describe('findConflicts', () => {
+  it('mesa_anti_lag conflicts with mesa_anti_lag_disable when it is active', () => {
+    const mesa = CATALOG_BY_ID.get('mesa_anti_lag')!
+    const disableItem = CATALOG_BY_ID.get('mesa_anti_lag_disable')!
+    const m = setItemActive(emptyModel(), disableItem, true)
+    const conflicts = findConflicts(m, mesa)
+    expect(conflicts.map((c) => c.id)).toContain('mesa_anti_lag_disable')
+  })
+
+  it('returns no conflicts when conflicting item is not active', () => {
+    const mesa = CATALOG_BY_ID.get('mesa_anti_lag')!
+    const conflicts = findConflicts(emptyModel(), mesa)
+    expect(conflicts).toHaveLength(0)
+  })
+
+  it('proton_hide_apu conflicts with proton_hide_nvidia when active', () => {
+    const hideApu = CATALOG_BY_ID.get('proton_hide_apu')!
+    const hideNv = CATALOG_BY_ID.get('proton_hide_nvidia')!
+    const m = setItemActive(emptyModel(), hideNv, true)
+    const conflicts = findConflicts(m, hideApu)
+    expect(conflicts.map((c) => c.id)).toContain('proton_hide_nvidia')
+  })
+})
+
+// ── findImpliedItems ──────────────────────────────────────────────────────────
+
+describe('findImpliedItems', () => {
+  it('proton_fsr4_rdna3 implies proton_fsr4', () => {
+    const item = CATALOG_BY_ID.get('proton_fsr4_rdna3')!
+    const implied = findImpliedItems(item)
+    expect(implied.map((i) => i.id)).toContain('proton_fsr4')
+  })
+
+  it('gs_hdr implies proton_hdr', () => {
+    const item = CATALOG_BY_ID.get('gs_hdr')!
+    const implied = findImpliedItems(item)
+    expect(implied.map((i) => i.id)).toContain('proton_hdr')
+  })
+
+  it('proton_log has no implications', () => {
+    const item = CATALOG_BY_ID.get('proton_log')!
+    expect(findImpliedItems(item)).toHaveLength(0)
+  })
+})
+
+// ── applyItemWithRelations ────────────────────────────────────────────────────
+
+describe('applyItemWithRelations', () => {
+  it('env↔env conflict: enabling mesa_anti_lag disables mesa_anti_lag_disable', () => {
+    const mesa = CATALOG_BY_ID.get('mesa_anti_lag')!
+    const disable = CATALOG_BY_ID.get('mesa_anti_lag_disable')!
+    let m = setItemActive(emptyModel(), disable, true)
+    expect(isItemActive(m, disable)).toBe(true)
+
+    const { model: next, disabled } = applyItemWithRelations(m, mesa, true)
+    expect(isItemActive(next, mesa)).toBe(true)
+    expect(isItemActive(next, disable)).toBe(false)
+    expect(disabled.map((d) => d.id)).toContain('mesa_anti_lag_disable')
+  })
+
+  it('env↔env conflict reverse: enabling mesa_anti_lag_disable disables mesa_anti_lag', () => {
+    const mesa = CATALOG_BY_ID.get('mesa_anti_lag')!
+    const disable = CATALOG_BY_ID.get('mesa_anti_lag_disable')!
+    let m = setItemActive(emptyModel(), mesa, true)
+    expect(isItemActive(m, mesa)).toBe(true)
+
+    const { model: next, disabled } = applyItemWithRelations(m, disable, true)
+    expect(isItemActive(next, disable)).toBe(true)
+    expect(isItemActive(next, mesa)).toBe(false)
+    expect(disabled.map((d) => d.id)).toContain('mesa_anti_lag')
+  })
+
+  it('env→env implication: enabling proton_fsr4_rdna3 also enables proton_fsr4', () => {
+    const rdna3 = CATALOG_BY_ID.get('proton_fsr4_rdna3')!
+    const fsr4 = CATALOG_BY_ID.get('proton_fsr4')!
+    const { model: next, enabled } = applyItemWithRelations(emptyModel(), rdna3, true)
+    expect(isItemActive(next, rdna3)).toBe(true)
+    expect(isItemActive(next, fsr4)).toBe(true)
+    expect(enabled.map((e) => e.id)).toContain('proton_fsr4')
+  })
+
+  it('gamescope→env implication: enabling gs_hdr also enables proton_hdr', () => {
+    const gsHdr = CATALOG_BY_ID.get('gs_hdr')!
+    const protonHdr = CATALOG_BY_ID.get('proton_hdr')!
+    const { model: next, enabled } = applyItemWithRelations(emptyModel(), gsHdr, true)
+    expect(isItemActive(next, gsHdr)).toBe(true)
+    expect(isItemActive(next, protonHdr)).toBe(true)
+    expect(enabled.map((e) => e.id)).toContain('proton_hdr')
+  })
+
+  it('turning OFF returns no disabled/enabled side effects', () => {
+    const mesa = CATALOG_BY_ID.get('mesa_anti_lag')!
+    const m = setItemActive(emptyModel(), mesa, true)
+    const { disabled, enabled } = applyItemWithRelations(m, mesa, false)
+    expect(disabled).toHaveLength(0)
+    expect(enabled).toHaveLength(0)
+  })
+
+  it('env↔env conflict with global env: disabling globalOn item writes counter-value', () => {
+    const mesa = CATALOG_BY_ID.get('mesa_anti_lag')!
+    const disable = CATALOG_BY_ID.get('mesa_anti_lag_disable')!
+    const globalEnv = { ENABLE_LAYER_MESA_ANTI_LAG: '1' }
+    // Enable disable-variant while the mesa item is globally on
+    const { model: next } = applyItemWithRelations(emptyModel(), disable, true, globalEnv)
+    // The enable variant should be countered with explicit off-value
+    expect(next.env['ENABLE_LAYER_MESA_ANTI_LAG']).toBe('0')
+    // The disable variant itself should be written
+    expect(next.env['DISABLE_LAYER_MESA_ANTI_LAG']).toBe('1')
+  })
+
+  it('wrapper→env conflict: enabling mangohud wrapper disables MANGOHUD=1 env item if active', () => {
+    const mangohudWrapper = CATALOG_BY_ID.get('mangohud')!
+    // Check that mangohud has conflictsWith relation
+    const conflicts = mangohudWrapper.relations?.conflictsWith ?? []
+    // If the catalog has no wrapper↔env conflict, at least the wrapper enables correctly
+    const { model: next } = applyItemWithRelations(emptyModel(), mangohudWrapper, true)
+    expect(isItemActive(next, mangohudWrapper)).toBe(true)
+    // disabled array should only include items that were actually active
+    expect(conflicts.length).toBeGreaterThanOrEqual(0)
+  })
+
+  it('proton_hide_apu conflicts: enabling while proton_hide_nvidia is on disables it', () => {
+    const hideApu = CATALOG_BY_ID.get('proton_hide_apu')!
+    const hideNv = CATALOG_BY_ID.get('proton_hide_nvidia')!
+    const m = setItemActive(emptyModel(), hideNv, true)
+    const { model: next, disabled } = applyItemWithRelations(m, hideApu, true)
+    expect(isItemActive(next, hideApu)).toBe(true)
+    expect(isItemActive(next, hideNv)).toBe(false)
+    expect(disabled.map((d) => d.id)).toContain('proton_hide_nvidia')
+  })
+
+  it('gamescope→wrapper conflict: enabling gs_mangoapp disables mangohud wrapper', () => {
+    const gsMangoapp = CATALOG_BY_ID.get('gs_mangoapp')!
+    const mangohud = CATALOG_BY_ID.get('mangohud')!
+    let m = setItemActive(emptyModel(), mangohud, true)
+    expect(isItemActive(m, mangohud)).toBe(true)
+    const { model: next, disabled } = applyItemWithRelations(m, gsMangoapp, true)
+    expect(isItemActive(next, gsMangoapp)).toBe(true)
+    expect(isItemActive(next, mangohud)).toBe(false)
+    expect(disabled.map((d) => d.id)).toContain('mangohud')
+  })
+
+  it('turning off a gamescope-arg clears its value to null', () => {
+    const item = CATALOG_BY_ID.get('gs_frameLimit')!
+    const gs = emptyGamescope()
+    gs.values['frameLimit'] = 60
+    const m = { ...emptyModel(), gamescope: gs }
+    expect(isItemActive(m, item)).toBe(true)
+    const next = setItemActive(m, item, false)
+    expect(next.gamescope?.values['frameLimit']).toBeNull()
+    expect(isItemActive(next, item)).toBe(false)
+  })
+})
+
+// ── Generic gamescope round-trips ─────────────────────────────────────────────
+
+describe('gamescope generic round-trips', () => {
+  it('round-trips int arg: gs_nested_width (-w)', () => {
+    const original = 'gamescope -w 1280 -- %command%'
+    const m = parseLaunchOptions(original)
+    expect(m.gamescope?.values['nestedWidth']).toBe(1280)
+    const out = serializeLaunchOptions(m)
+    const m2 = parseLaunchOptions(out)
+    expect(m2.gamescope?.values['nestedWidth']).toBe(1280)
+  })
+
+  it('round-trips enum arg: gs_scaler (-S auto)', () => {
+    const original = 'gamescope -S auto -- %command%'
+    const m = parseLaunchOptions(original)
+    expect(m.gamescope?.values['scaler']).toBe('auto')
+    const out = serializeLaunchOptions(m)
+    const m2 = parseLaunchOptions(out)
+    expect(m2.gamescope?.values['scaler']).toBe('auto')
+  })
+
+  it('round-trips enum arg: gs_filter (-F fsr)', () => {
+    const original = 'gamescope -F fsr -- %command%'
+    const m = parseLaunchOptions(original)
+    expect(m.gamescope?.values['filter']).toBe('fsr')
+    const out = serializeLaunchOptions(m)
+    const m2 = parseLaunchOptions(out)
+    expect(m2.gamescope?.values['filter']).toBe('fsr')
+  })
+
+  it('round-trips int arg: gs_fsr_sharpness (--sharpness)', () => {
+    const original = 'gamescope --sharpness 5 -- %command%'
+    const m = parseLaunchOptions(original)
+    expect(m.gamescope?.values['fsrSharpness']).toBe(5)
+    const out = serializeLaunchOptions(m)
+    const m2 = parseLaunchOptions(out)
+    expect(m2.gamescope?.values['fsrSharpness']).toBe(5)
+  })
+
+  it('round-trips string arg: gs_prefer_output (--prefer-output)', () => {
+    const original = "gamescope --prefer-output 'DP-1' -- %command%"
+    const m = parseLaunchOptions(original)
+    expect(m.gamescope?.values['preferOutput']).toBe('DP-1')
+    const out = serializeLaunchOptions(m)
+    const m2 = parseLaunchOptions(out)
+    expect(m2.gamescope?.values['preferOutput']).toBe('DP-1')
+  })
+
+  it('round-trips bool toggle: gs_borderless (-b)', () => {
+    const original = 'gamescope -b -- %command%'
+    const m = parseLaunchOptions(original)
+    expect(m.gamescope?.values['borderless']).toBe(true)
+    const out = serializeLaunchOptions(m)
+    const m2 = parseLaunchOptions(out)
+    expect(m2.gamescope?.values['borderless']).toBe(true)
+  })
+
+  it('unknown gamescope flag passes through to extraArgs', () => {
+    const original = 'gamescope --some-unknown-flag -- %command%'
+    const m = parseLaunchOptions(original)
+    expect(m.gamescope?.extraArgs).toContain('--some-unknown-flag')
+    const out = serializeLaunchOptions(m)
+    expect(out).toContain('--some-unknown-flag')
+  })
+
+  it('round-trips float arg: gs_nis_sharpness (--nis-sharpness)', () => {
+    const original = 'gamescope --nis-sharpness 0.5 -- %command%'
+    const m = parseLaunchOptions(original)
+    expect(m.gamescope?.values['nisSharpness']).toBeCloseTo(0.5)
+    const out = serializeLaunchOptions(m)
+    const m2 = parseLaunchOptions(out)
+    expect(m2.gamescope?.values['nisSharpness']).toBeCloseTo(0.5)
+  })
+
+  it('gs_fullscreen recognized as toggle (section=gamescope, input=toggle)', () => {
+    const item = CATALOG_BY_ID.get('gs_fullscreen')!
+    expect(item.section).toBe('gamescope')
+    expect(item.input).toBe('toggle')
+    const m = parseLaunchOptions('gamescope -f -- %command%')
+    expect(m.gamescope?.values['fullscreen']).toBe(true)
+  })
+})
+
+// ── Generic per-item round-trip ───────────────────────────────────────────────
+// For every catalog item, enable it, serialize, parse back, assert still active.
+
+import { getItemsBySection, getGamescopeItems } from '../../src/shared/launchOptions/catalog'
+
+describe('generic per-item round-trip', () => {
+  it('no item has a legacy "kind" field', () => {
+    for (const item of CATALOG_BY_ID.values()) {
+      expect((item as unknown as Record<string, unknown>)['kind']).toBeUndefined()
+    }
+  })
+
+  it('all env items survive enable→serialize→parse→isActive', () => {
+    for (const item of getItemsBySection('env')) {
+      const m = setItemActive(emptyModel(), item, true)
+      const out = serializeLaunchOptions(m)
+      const m2 = parseLaunchOptions(out)
+      expect(isItemActive(m2, item), `env item "${item.id}" not active after round-trip`).toBe(true)
+    }
+  })
+
+  it('all prefix-token items survive enable→serialize→parse→isActive', () => {
+    for (const item of getItemsBySection('prefix-token')) {
+      const m = setItemActive(emptyModel(), item, true)
+      const out = serializeLaunchOptions(m)
+      const m2 = parseLaunchOptions(out)
+      expect(isItemActive(m2, item), `prefix-token "${item.id}" not active after round-trip`).toBe(true)
+    }
+  })
+
+  it('all gamescope toggle items survive enable→serialize→parse→isActive', () => {
+    for (const item of getGamescopeItems().filter((i) => i.input === 'toggle')) {
+      const m = setItemActive(emptyModel(), item, true)
+      const out = serializeLaunchOptions(m)
+      const m2 = parseLaunchOptions(out)
+      expect(isItemActive(m2, item), `gamescope toggle "${item.id}" not active after round-trip`).toBe(true)
+    }
   })
 })

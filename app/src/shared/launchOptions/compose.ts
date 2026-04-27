@@ -1,19 +1,36 @@
 /**
  * Pure TS port of scripts/launch_options_compose.py.
  * No Node.js dependencies — safe to import in both main and renderer.
+ *
+ * All item-level logic dispatches through section handlers (env /
+ * prefix-token / gamescope). No hardcoded 'kind' switches.
  */
+
+import {
+  CATALOG_BY_ID,
+  getItemsBySection,
+  getGamescopeItems,
+  buildGsFlagMap,
+} from './catalog'
+import type { Item } from './catalog'
+
+// Re-export catalog types so consumers can import from a single location.
+export type { Item, CatalogRelation, CatalogRelations, ItemSection, InputType, ValueType, CatalogTab, CatalogGroup } from './catalog'
+export { CATALOG_BY_ID, CATALOG, CATALOG_TABS, getItemsBySection, getGamescopeItems, getItemsByTab, getTabById, getItemsForTabGrouped } from './catalog'
+export { validateCatalog } from './catalog'
+
+// Legacy accessor aliases re-exported for backward compat
+export { getEnvPresets, getWrappers, getGamescopeToggles, getGamescopeArgs } from './catalog'
 
 export const COMMAND_TOKEN = '%command%'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+export type GamescopeValue = boolean | number | string | null
+
 export interface GamescopeConfig {
-  fullscreen: boolean
-  hdr: boolean
-  vrr: boolean
-  frameLimit: number | null
-  width: number | null
-  height: number | null
+  /** Keyed by catalog Item.field for gamescope items. */
+  values: Record<string, GamescopeValue>
   extraArgs: string[]
 }
 
@@ -42,65 +59,181 @@ export function emptyModel(): LaunchOptionsModel {
 }
 
 export function emptyGamescope(): GamescopeConfig {
-  return { fullscreen: false, hdr: false, vrr: false, frameLimit: null, width: null, height: null, extraArgs: [] }
+  const values: Record<string, GamescopeValue> = {}
+  for (const item of getItemsBySection('gamescope')) {
+    values[item.field!] = item.input === 'toggle' ? false : null
+  }
+  return { values, extraArgs: [] }
 }
 
-// ── Preset definitions ─────────────────────────────────────────────────────
+// ── Preset compatibility shim ───────────────────────────────────────────────
 
 export type GpuFamily = 'amd' | 'nvidia' | 'any'
 export type RiskLevel = 'safe' | 'experimental'
 
-export interface EnvPreset {
-  id: string
-  label: string
-  tooltip: string
-  tier: number
-  risk: RiskLevel
-  envKey: string
-  envValue: string
-  gpuFamily: GpuFamily
-}
+/** EnvPreset is an alias for Item with section=env, with a tooltip compat shim. */
+export type EnvPreset = Item & { tooltip: string }
 
-export const ENV_PRESETS: EnvPreset[] = [
-  // Tier 1 — Overview / common
-  { id: 'proton_log', label: 'Proton log file', tooltip: 'Writes ~/steam-<appid>.log for debugging (Valve FAQ).', tier: 1, risk: 'safe', envKey: 'PROTON_LOG', envValue: '1', gpuFamily: 'any' },
-  { id: 'dxvk_hud_fps', label: 'DXVK HUD (fps)', tooltip: 'DXVK on-screen HUD with fps (Proton FAQ / DXVK README).', tier: 1, risk: 'safe', envKey: 'DXVK_HUD', envValue: 'fps', gpuFamily: 'any' },
-  { id: 'proton_wined3d', label: 'WineD3D (OpenGL)', tooltip: 'Force OpenGL WineD3D instead of DXVK when Vulkan fails (lower performance).', tier: 1, risk: 'safe', envKey: 'PROTON_USE_WINED3D', envValue: '1', gpuFamily: 'any' },
-  { id: 'proton_no_esync', label: 'Disable esync', tooltip: 'PROTON_NO_ESYNC=1 — try if you see stutter or sync issues.', tier: 1, risk: 'safe', envKey: 'PROTON_NO_ESYNC', envValue: '1', gpuFamily: 'any' },
-  { id: 'proton_no_fsync', label: 'Disable fsync', tooltip: 'PROTON_NO_FSYNC=1 — try if you see stutter or sync issues.', tier: 1, risk: 'safe', envKey: 'PROTON_NO_FSYNC', envValue: '1', gpuFamily: 'any' },
-  { id: 'proton_no_d3d11', label: 'Disable D3D11', tooltip: 'PROTON_NO_D3D11=1 — niche troubleshooting only.', tier: 1, risk: 'experimental', envKey: 'PROTON_NO_D3D11', envValue: '1', gpuFamily: 'any' },
-  // Tier 2
-  { id: 'proton_dxvk_lowlatency', label: 'DXVK low latency', tooltip: 'PROTON_DXVK_LOWLATENCY=1 — low-latency DXVK path (tool/version-dependent).', tier: 2, risk: 'experimental', envKey: 'PROTON_DXVK_LOWLATENCY', envValue: '1', gpuFamily: 'any' },
-  { id: 'vkbasalt', label: 'vkBasalt', tooltip: 'ENABLE_VKBASALT=1 — requires vkBasalt installed and configured.', tier: 2, risk: 'safe', envKey: 'ENABLE_VKBASALT', envValue: '1', gpuFamily: 'any' },
-  // Tier 3 — General tweaks
-  { id: 'steamdeck_off', label: 'Disable Steam Deck profile', tooltip: 'SteamDeck=0 — some titles behave better without Deck hints.', tier: 3, risk: 'safe', envKey: 'SteamDeck', envValue: '0', gpuFamily: 'any' },
-  { id: 'proton_wayland', label: 'Proton Wayland', tooltip: 'PROTON_ENABLE_WAYLAND=1 — experimental; can break overlay / input.', tier: 3, risk: 'experimental', envKey: 'PROTON_ENABLE_WAYLAND', envValue: '1', gpuFamily: 'any' },
-  { id: 'proton_no_steaminput', label: 'Disable Steam Input', tooltip: 'PROTON_NO_STEAMINPUT=1 — controller / overlay workarounds.', tier: 3, risk: 'experimental', envKey: 'PROTON_NO_STEAMINPUT', envValue: '1', gpuFamily: 'any' },
-  { id: 'proton_prefer_sdl', label: 'Prefer SDL controller', tooltip: 'PROTON_PREFER_SDL=1 — workaround for pad detection.', tier: 3, risk: 'safe', envKey: 'PROTON_PREFER_SDL', envValue: '1', gpuFamily: 'any' },
-  { id: 'proton_local_shader_cache', label: 'Local shader cache', tooltip: 'PROTON_LOCAL_SHADER_CACHE=1 — per-game shader cache isolation.', tier: 3, risk: 'safe', envKey: 'PROTON_LOCAL_SHADER_CACHE', envValue: '1', gpuFamily: 'any' },
-  { id: 'proton_hdr', label: 'HDR output', tooltip: 'PROTON_ENABLE_HDR=1 — requires capable display and game.', tier: 3, risk: 'experimental', envKey: 'PROTON_ENABLE_HDR', envValue: '1', gpuFamily: 'any' },
-  { id: 'proton_ntsync_off', label: 'Prefer FSync over NTSync', tooltip: 'PROTON_USE_NTSYNC=0 — ProtonPlus-style FSync preference.', tier: 3, risk: 'experimental', envKey: 'PROTON_USE_NTSYNC', envValue: '0', gpuFamily: 'any' },
-  { id: 'scb_auto_hdr', label: 'Scopebuddy Auto HDR', tooltip: 'SCB_AUTO_HDR=1 — with scopebuddy wrapper if used.', tier: 3, risk: 'experimental', envKey: 'SCB_AUTO_HDR', envValue: '1', gpuFamily: 'any' },
-  { id: 'scb_auto_vrr', label: 'Scopebuddy Auto VRR', tooltip: 'SCB_AUTO_VRR=1', tier: 3, risk: 'experimental', envKey: 'SCB_AUTO_VRR', envValue: '1', gpuFamily: 'any' },
-  // Tier 4 — AMD
-  { id: 'mesa_anti_lag', label: 'Mesa Anti-Lag', tooltip: 'ENABLE_LAYER_MESA_ANTI_LAG=1 — AMD Mesa latency layer.', tier: 4, risk: 'experimental', envKey: 'ENABLE_LAYER_MESA_ANTI_LAG', envValue: '1', gpuFamily: 'amd' },
-  { id: 'mesa_anti_lag_disable', label: 'Disable Mesa Anti-Lag', tooltip: 'DISABLE_LAYER_MESA_ANTI_LAG=1 — turns the Mesa anti-lag layer off.', tier: 4, risk: 'safe', envKey: 'DISABLE_LAYER_MESA_ANTI_LAG', envValue: '1', gpuFamily: 'amd' },
-  { id: 'dri_prime', label: 'Use AMD dGPU (DRI_PRIME)', tooltip: 'DRI_PRIME=1 — hybrid graphics hint.', tier: 4, risk: 'safe', envKey: 'DRI_PRIME', envValue: '1', gpuFamily: 'amd' },
-  { id: 'proton_hide_apu', label: 'Hide AMD APU', tooltip: 'PROTON_HIDE_APU=1 — mis-detection workaround.', tier: 4, risk: 'experimental', envKey: 'PROTON_HIDE_APU', envValue: '1', gpuFamily: 'amd' },
-  { id: 'proton_fsr4', label: 'FSR 4 upgrade', tooltip: 'PROTON_FSR4_UPGRADE=1 — bleeding-edge Proton feature.', tier: 4, risk: 'experimental', envKey: 'PROTON_FSR4_UPGRADE', envValue: '1', gpuFamily: 'amd' },
-  { id: 'proton_fsr4_rdna3', label: 'FSR 4 RDNA3 upgrade', tooltip: 'PROTON_FSR4_RDNA3_UPGRADE=1', tier: 4, risk: 'experimental', envKey: 'PROTON_FSR4_RDNA3_UPGRADE', envValue: '1', gpuFamily: 'amd' },
-  // Tier 4 — NVIDIA
-  { id: 'proton_nvapi', label: 'NVAPI (NVIDIA)', tooltip: 'PROTON_ENABLE_NVAPI=1 — DLSS / NVAPI paths.', tier: 4, risk: 'experimental', envKey: 'PROTON_ENABLE_NVAPI', envValue: '1', gpuFamily: 'nvidia' },
-  { id: 'proton_ngx_updater', label: 'Update DLSS (NGX)', tooltip: 'PROTON_ENABLE_NGX_UPDATER=1', tier: 4, risk: 'experimental', envKey: 'PROTON_ENABLE_NGX_UPDATER', envValue: '1', gpuFamily: 'nvidia' },
-  { id: 'proton_hide_nvidia', label: 'Hide NVIDIA GPU', tooltip: 'PROTON_HIDE_NVIDIA_GPU=1 — workaround for some titles.', tier: 4, risk: 'experimental', envKey: 'PROTON_HIDE_NVIDIA_GPU', envValue: '1', gpuFamily: 'nvidia' },
-  { id: 'proton_dlss_indicator', label: 'DLSS indicator', tooltip: 'PROTON_DLSS_INDICATOR=1', tier: 4, risk: 'experimental', envKey: 'PROTON_DLSS_INDICATOR', envValue: '1', gpuFamily: 'nvidia' },
-  { id: 'proton_nvidia_libs', label: 'NVIDIA libraries', tooltip: 'PROTON_NVIDIA_LIBS=1 — PhysX/CUDA style paths.', tier: 4, risk: 'experimental', envKey: 'PROTON_NVIDIA_LIBS', envValue: '1', gpuFamily: 'nvidia' },
-  { id: 'proton_xess', label: 'XeSS upgrade', tooltip: 'PROTON_XESS_UPGRADE=1 — Intel XeSS.', tier: 4, risk: 'experimental', envKey: 'PROTON_XESS_UPGRADE', envValue: '1', gpuFamily: 'any' },
-]
+export const ENV_PRESETS: EnvPreset[] = getItemsBySection('env').map((p) => ({
+  ...p,
+  tooltip: p.description ?? `${p.envKey}=${p.envValue}`,
+}))
 
 export const PRESET_BY_ID = new Map(ENV_PRESETS.map((p) => [p.id, p]))
 
-// IDs grouped for the Overview section
+// ── Section handler interface ───────────────────────────────────────────────
+
+interface SectionHandler {
+  isActive(model: LaunchOptionsModel, item: Item, globalEnv: Record<string, string>): boolean
+  setActive(model: LaunchOptionsModel, item: Item, on: boolean, globalEnv: Record<string, string>): LaunchOptionsModel
+}
+
+// ── env section handler ─────────────────────────────────────────────────────
+
+const envHandler: SectionHandler = {
+  isActive(model, item, globalEnv) {
+    if (item.envKey === 'DXVK_HUD') {
+      const v = (model.env['DXVK_HUD'] ?? '').trim().toLowerCase()
+      if (!!v && !['0', 'false', 'no'].includes(v)) return true
+      return globalEnv['DXVK_HUD'] === item.envValue
+    }
+    return model.env[item.envKey!] === item.envValue || globalEnv[item.envKey!] === item.envValue
+  },
+  setActive(model, item, on, globalEnv) {
+    const preset = PRESET_BY_ID.get(item.id) ?? (item as EnvPreset)
+    return setPreset(model, preset, on, globalEnv)
+  },
+}
+
+// ── prefix-token section handler ────────────────────────────────────────────
+
+const prefixTokenHandler: SectionHandler = {
+  isActive(model, item) {
+    return (model as unknown as Record<string, unknown>)[item.modelField!] === true
+  },
+  setActive(model, item, on) {
+    const next = cloneModel(model)
+    ;(next as unknown as Record<string, unknown>)[item.modelField!] = on
+    return next
+  },
+}
+
+// ── gamescope section handler ───────────────────────────────────────────────
+
+const gamescopeHandler: SectionHandler = {
+  isActive(model, item) {
+    if (item.input === 'toggle') {
+      return model.gamescope?.values[item.field!] === true
+    }
+    const v = model.gamescope?.values[item.field!]
+    return v !== null && v !== undefined && v !== ''
+  },
+  setActive(model, item, on) {
+    if (item.input === 'toggle') {
+      const next = cloneModel(model)
+      if (on && !next.gamescope) next.gamescope = emptyGamescope()
+      if (next.gamescope) next.gamescope.values[item.field!] = on
+      return next
+    }
+    // arg: turning off resets to null; turning on without value is a no-op (value set via UI)
+    if (!on) {
+      const next = cloneModel(model)
+      if (next.gamescope) next.gamescope.values[item.field!] = null
+      return next
+    }
+    return model
+  },
+}
+
+// ── Section dispatch table ──────────────────────────────────────────────────
+
+const SECTION_HANDLERS: Record<string, SectionHandler> = {
+  env: envHandler,
+  'prefix-token': prefixTokenHandler,
+  gamescope: gamescopeHandler,
+}
+
+function getHandler(item: Item): SectionHandler {
+  const h = SECTION_HANDLERS[item.section]
+  if (!h) throw new Error(`Unknown section: ${item.section}`)
+  return h
+}
+
+// ── Cross-item helpers (now section-dispatched) ────────────────────────────
+
+export function isItemActive(
+  model: LaunchOptionsModel,
+  item: Item,
+  globalEnv: Record<string, string> = {}
+): boolean {
+  return getHandler(item).isActive(model, item, globalEnv)
+}
+
+export function setItemActive(
+  model: LaunchOptionsModel,
+  item: Item,
+  on: boolean,
+  globalEnv: Record<string, string> = {}
+): LaunchOptionsModel {
+  return getHandler(item).setActive(model, item, on, globalEnv)
+}
+
+export function findConflicts(
+  model: LaunchOptionsModel,
+  item: Item,
+  globalEnv: Record<string, string> = {}
+): Item[] {
+  const conflicts: Item[] = []
+  for (const rel of item.relations?.conflictsWith ?? []) {
+    const target = CATALOG_BY_ID.get(rel.target)
+    if (target && isItemActive(model, target, globalEnv)) {
+      conflicts.push(target)
+    }
+  }
+  return conflicts
+}
+
+export function findImpliedItems(item: Item): Item[] {
+  return (item.relations?.implies ?? [])
+    .map((rel) => CATALOG_BY_ID.get(rel.target))
+    .filter((t): t is Item => t !== undefined)
+}
+
+export function applyItemWithRelations(
+  model: LaunchOptionsModel,
+  item: Item,
+  on: boolean,
+  globalEnv: Record<string, string> = {}
+): { model: LaunchOptionsModel; disabled: Item[]; enabled: Item[] } {
+  if (!on) {
+    return { model: setItemActive(model, item, false, globalEnv), disabled: [], enabled: [] }
+  }
+
+  let next = cloneModel(model)
+  const disabled: Item[] = []
+  const enabled: Item[] = []
+
+  for (const conflict of findConflicts(next, item, globalEnv)) {
+    next = setItemActive(next, conflict, false, globalEnv)
+    disabled.push(conflict)
+  }
+
+  next = setItemActive(next, item, true, globalEnv)
+
+  const visited = new Set<string>([item.id])
+  for (const implied of findImpliedItems(item)) {
+    if (visited.has(implied.id)) continue
+    visited.add(implied.id)
+    if (!isItemActive(next, implied, globalEnv)) {
+      next = setItemActive(next, implied, true, globalEnv)
+      enabled.push(implied)
+    }
+  }
+
+  return { model: next, disabled, enabled }
+}
+
+// IDs grouped for the Overview section (env tab)
 export const OVERVIEW_PRESET_IDS = new Set([
   'proton_log', 'dxvk_hud_fps', 'proton_wined3d', 'proton_no_esync', 'proton_no_fsync', 'proton_no_d3d11', 'vkbasalt',
 ])
@@ -162,27 +295,63 @@ function looksLikeEnvToken(t: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)
 }
 
+// ── Prefix-token lookup (built lazily from catalog) ────────────────────────
+
+let _prefixTokenMap: Map<string, Item> | null = null
+function getPrefixTokenMap(): Map<string, Item> {
+  if (!_prefixTokenMap) {
+    _prefixTokenMap = new Map()
+    for (const item of getItemsBySection('prefix-token')) {
+      _prefixTokenMap.set(item.token!.toLowerCase(), item)
+    }
+  }
+  return _prefixTokenMap
+}
+
+// ── Gamescope flag-map (built lazily) ──────────────────────────────────────
+
+let _gsFlagMap: Map<string, Item> | null = null
+function getGsFlagMap(): Map<string, Item> {
+  if (!_gsFlagMap) _gsFlagMap = buildGsFlagMap()
+  return _gsFlagMap
+}
+
 // ── Gamescope parser ───────────────────────────────────────────────────────
 
 function parseGamescopeTokens(tokens: string[]): { cfg: GamescopeConfig; consumed: number } {
   const cfg = emptyGamescope()
   if (!tokens.length || tokens[0] !== 'gamescope') return { cfg, consumed: 0 }
+  const flagMap = getGsFlagMap()
   let i = 1
   while (i < tokens.length) {
     const tok = tokens[i]
-    if (tok === '-f' || tok === '--fullscreen') { cfg.fullscreen = true; i++; continue }
-    if (tok === '--hdr-enabled' || tok === '--hdr') { cfg.hdr = true; i++; continue }
-    if (tok === '-O' || tok === '--adaptive-sync' || tok === '--vr') { cfg.vrr = true; i++; continue }
-    if ((tok === '-r' || tok === '--framerate' || tok === '-R') && i + 1 < tokens.length && /^\d+$/.test(tokens[i + 1])) {
-      cfg.frameLimit = parseInt(tokens[i + 1]); i += 2; continue
-    }
-    if ((tok === '-W' || tok === '--output-width') && i + 1 < tokens.length && /^\d+$/.test(tokens[i + 1])) {
-      cfg.width = parseInt(tokens[i + 1]); i += 2; continue
-    }
-    if ((tok === '-H' || tok === '--output-height') && i + 1 < tokens.length && /^\d+$/.test(tokens[i + 1])) {
-      cfg.height = parseInt(tokens[i + 1]); i += 2; continue
-    }
     if (tok === '--') { i++; break }
+
+    const item = flagMap.get(tok)
+    if (item) {
+      if (item.input === 'toggle') {
+        cfg.values[item.field!] = true
+        i++
+        continue
+      }
+      // arg: expects a value in the next token
+      if (i + 1 < tokens.length) {
+        const raw = tokens[i + 1]
+        if (item.valueType === 'int') {
+          const n = parseInt(raw, 10)
+          if (!isNaN(n)) { cfg.values[item.field!] = n; i += 2; continue }
+        } else if (item.valueType === 'float') {
+          const n = parseFloat(raw)
+          if (!isNaN(n)) { cfg.values[item.field!] = n; i += 2; continue }
+        } else if (item.valueType === 'string') {
+          cfg.values[item.field!] = raw; i += 2; continue
+        }
+        // enum: accept any value (validation is for UI only)
+        cfg.values[item.field!] = raw; i += 2; continue
+      }
+    }
+
+    // Unknown flag — preserve verbatim
     if (tok.startsWith('-')) {
       cfg.extraArgs.push(tok); i++
       if (i < tokens.length && !tokens[i].startsWith('-')) { cfg.extraArgs.push(tokens[i]); i++ }
@@ -196,9 +365,11 @@ function parseGamescopeTokens(tokens: string[]): { cfg: GamescopeConfig; consume
 // ── Parse ──────────────────────────────────────────────────────────────────
 
 function processTokensIntoModel(tokens: string[], model: LaunchOptionsModel): void {
+  const prefixMap = getPrefixTokenMap()
   let i = 0
   while (i < tokens.length) {
     const t = tokens[i]
+
     if (looksLikeEnvToken(t)) {
       const eqIdx = t.indexOf('=')
       const k = t.slice(0, eqIdx)
@@ -207,16 +378,22 @@ function processTokensIntoModel(tokens: string[], model: LaunchOptionsModel): vo
       model.env[k] = v
       i++; continue
     }
-    if (t.toLowerCase() === 'mangohud') { model.mangohud = true; i++; continue }
-    if (t === 'gamemode') { model.gamemode = true; i++; continue }
-    if (t === 'game-performance') { model.gamePerformance = true; i++; continue }
+
+    const prefixItem = prefixMap.get(t.toLowerCase())
+    if (prefixItem) {
+      ;(model as unknown as Record<string, unknown>)[prefixItem.modelField!] = true
+      i++; continue
+    }
+
     if (t === 'gamescope') {
       const { cfg, consumed } = parseGamescopeTokens(tokens.slice(i))
       if (consumed > 0) { model.gamescope = cfg; i += consumed; continue }
     }
+
     model.unknownPrefixTokens.push(t); i++
   }
-  // Normalize: MANGOHUD=1 in env → mangohud wrapper
+
+  // Normalize MANGOHUD=1 in env → mangohud wrapper
   for (const k of Object.keys(model.env)) {
     if (k.toUpperCase() === 'MANGOHUD' && ['1', 'true', 'TRUE', 'yes'].includes(model.env[k])) {
       model.mangohud = true
@@ -265,12 +442,16 @@ export function parseLaunchOptions(s: string): LaunchOptionsModel {
 
 function serializeGamescope(gs: GamescopeConfig): string[] {
   const out = ['gamescope']
-  if (gs.fullscreen) out.push('-f')
-  if (gs.hdr) out.push('--hdr-enabled')
-  if (gs.vrr) out.push('-O')
-  if (gs.width !== null) out.push('-W', String(gs.width))
-  if (gs.height !== null) out.push('-H', String(gs.height))
-  if (gs.frameLimit !== null) out.push('-r', String(gs.frameLimit))
+  for (const item of getGamescopeItems()) {
+    const v = gs.values[item.field!]
+    if (item.input === 'toggle') {
+      if (v === true) out.push(item.cliFlags![0])
+    } else {
+      if (v !== null && v !== undefined && v !== '') {
+        out.push(item.cliFlags![0], String(v))
+      }
+    }
+  }
   out.push(...gs.extraArgs)
   out.push('--')
   return out
@@ -295,9 +476,12 @@ export function serializeLaunchOptions(model: LaunchOptionsModel): string {
     }
   }
 
-  if (model.mangohud) parts.push('mangohud')
-  if (model.gamemode) parts.push('gamemode')
-  if (model.gamePerformance) parts.push('game-performance')
+  // Emit prefix-token items in catalog order
+  for (const item of getItemsBySection('prefix-token')) {
+    if ((model as unknown as Record<string, unknown>)[item.modelField!] === true) {
+      parts.push(item.token!)
+    }
+  }
 
   if (model.gamescope) parts.push(...serializeGamescope(model.gamescope).map(shlexQuote))
 
@@ -322,40 +506,28 @@ export function isPresetActive(model: LaunchOptionsModel, preset: EnvPreset): bo
     const v = (model.env['DXVK_HUD'] || '').trim().toLowerCase()
     return !!v && !['0', 'false', 'no'].includes(v)
   }
-  return model.env[preset.envKey] === preset.envValue
+  return model.env[preset.envKey!] === preset.envValue
 }
 
 // ── Tri-state preset resolution ─────────────────────────────────────────────
 
-/**
- * Describes how a preset relates to both the local model and global
- * user_settings.py overrides.
- *
- * - off              — not active locally, no global setting for this key
- * - on               — active in local launch options (no conflicting global)
- * - global-on        — user_settings.py sets this env key to preset's exact value; no local override
- * - global-other     — user_settings.py sets this env key but to a different value; no local override
- * - local-overrides-global — local is active AND global sets a different value for the same key
- */
 export type PresetState =
   | { kind: 'off' }
   | { kind: 'on' }
-  | { kind: 'local-off' }                                     // explicitly forced off via counter-value (KEY=0) against a global
+  | { kind: 'local-off' }
   | { kind: 'global-on' }
   | { kind: 'global-other'; value: string }
   | { kind: 'local-overrides-global'; globalValue: string }
 
-/** Classify the combined state of a preset given the current model and the
- *  global env overrides extracted from user_settings.py. */
 export function presetState(
   model: LaunchOptionsModel,
   preset: EnvPreset,
   globalEnv: Record<string, string> = {}
 ): PresetState {
   const localActive = isPresetActive(model, preset)
-  const globalVal = globalEnv[preset.envKey]
+  const globalVal = globalEnv[preset.envKey!]
   const globalMatchesPreset = globalVal === preset.envValue
-  const localVal = model.env[preset.envKey]
+  const localVal = model.env[preset.envKey!]
 
   if (localActive) {
     if (globalVal !== undefined && !globalMatchesPreset) {
@@ -364,12 +536,9 @@ export function presetState(
     return { kind: 'on' }
   }
 
-  // Detect explicit local off-value that counters a global — e.g. KEY=0 written
-  // by presetEnvOffValue when user disabled a globally-set preset.
   if (globalVal !== undefined) {
-    const offVal = presetEnvOffValue(preset.envKey, preset.envValue)
+    const offVal = presetEnvOffValue(preset.envKey!, preset.envValue!)
     if (offVal !== null && localVal === offVal) {
-      // User has explicitly forced this off with a counter-value — distinct from plain 'off'
       return { kind: 'local-off' }
     }
     if (globalMatchesPreset) return { kind: 'global-on' }
@@ -379,13 +548,6 @@ export function presetState(
   return { kind: 'off' }
 }
 
-/**
- * Best-effort "off" override value for a given preset env key.
- * When user_settings.py globally enables a preset (e.g. PROTON_NO_ESYNC=1),
- * toggling the preset OFF in the UI must write an explicit counter-value (e.g. =0)
- * into the local launch options so Steam's wine/Proton layer sees the override.
- * Mirrors Python's `preset_env_off_value()`.
- */
 export function presetEnvOffValue(envKey: string, valueWhenOn: string): string | null {
   const v = valueWhenOn.trim().toLowerCase()
   if (['1', 'true', 'yes', 'on'].includes(v)) return '0'
@@ -394,11 +556,9 @@ export function presetEnvOffValue(envKey: string, valueWhenOn: string): string |
   return null
 }
 
-/** Remove a preset's env key entirely, reverting to "inherit global" state.
- *  Use this when the user wants to stop overriding a globally-set value. */
 export function clearPreset(model: LaunchOptionsModel, preset: EnvPreset): LaunchOptionsModel {
   const next = cloneModel(model)
-  delete next.env[preset.envKey]
+  delete next.env[preset.envKey!]
   next.envOrder = next.envOrder.filter((k) => k !== preset.envKey)
   return next
 }
@@ -411,22 +571,19 @@ export function setPreset(
 ): LaunchOptionsModel {
   const next = cloneModel(model)
   if (on) {
-    if (!next.env[preset.envKey]) next.envOrder.push(preset.envKey)
-    next.env[preset.envKey] = preset.envValue
+    if (!next.env[preset.envKey!]) next.envOrder.push(preset.envKey!)
+    next.env[preset.envKey!] = preset.envValue!
   } else {
-    // If a global user_settings.py value exists for this key, write the explicit
-    // off-value (e.g. KEY=0) so the local launch option counters the global setting.
-    // This mirrors Python's apply_to_model logic (lines 360-366).
-    const hasGlobal = preset.envKey in globalEnv
+    const hasGlobal = preset.envKey! in globalEnv
     if (hasGlobal) {
-      const offVal = presetEnvOffValue(preset.envKey, preset.envValue)
+      const offVal = presetEnvOffValue(preset.envKey!, preset.envValue!)
       if (offVal !== null) {
-        if (!next.env[preset.envKey]) next.envOrder.push(preset.envKey)
-        next.env[preset.envKey] = offVal
+        if (!next.env[preset.envKey!]) next.envOrder.push(preset.envKey!)
+        next.env[preset.envKey!] = offVal
         return next
       }
     }
-    delete next.env[preset.envKey]
+    delete next.env[preset.envKey!]
     next.envOrder = next.envOrder.filter((k) => k !== preset.envKey)
   }
   return next
@@ -439,7 +596,9 @@ export function cloneModel(model: LaunchOptionsModel): LaunchOptionsModel {
     mangohud: model.mangohud,
     gamemode: model.gamemode,
     gamePerformance: model.gamePerformance,
-    gamescope: model.gamescope ? { ...model.gamescope, extraArgs: [...model.gamescope.extraArgs] } : null,
+    gamescope: model.gamescope
+      ? { values: { ...model.gamescope.values }, extraArgs: [...model.gamescope.extraArgs] }
+      : null,
     suffixTokens: [...model.suffixTokens],
     unknownPrefixTokens: [...model.unknownPrefixTokens],
   }
@@ -490,10 +649,23 @@ export interface ClassifiedToken {
   kind: TokenKind
 }
 
-const WRAPPER_TOKENS = new Set(['mangohud', 'gamemode', 'game-performance'])
-const GAMESCOPE_FLAGS = /^(-[WHrfO]|--hdr-enabled|--expose-wayland|--adaptive-sync)/
+/** Wrapper token set built from catalog at import time. */
+const WRAPPER_TOKENS: Set<string> = new Set(
+  getItemsBySection('prefix-token').map((i) => i.token!.toLowerCase())
+)
 
-/** Classify each token in a raw launch options string for syntax-highlighted rendering. */
+/** Gamescope flag regex built from catalog at import time. */
+function buildGamesopeRegex(): RegExp {
+  const flags = new Set<string>()
+  for (const item of getItemsBySection('gamescope')) {
+    for (const f of item.cliFlags ?? []) flags.add(f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  }
+  if (!flags.size) return /^$/
+  return new RegExp(`^(${[...flags].join('|')})$`)
+}
+
+const GAMESCOPE_FLAGS = buildGamesopeRegex()
+
 export function tokenize(raw: string): ClassifiedToken[] {
   if (!raw.trim()) return []
   const tokens = shlexSplit(raw)
@@ -510,8 +682,6 @@ export function tokenize(raw: string): ClassifiedToken[] {
 
 export type DiffToken = { raw: string; status: 'same' | 'added' | 'removed'; kind: TokenKind }
 
-/** Produce a token-level diff between two raw launch option strings.
- *  Uses a simple LCS-based diffing over the token arrays. */
 export function diffTokens(before: string, after: string): DiffToken[] {
   const bTokens = tokenize(before)
   const aTokens = tokenize(after)
@@ -520,7 +690,6 @@ export function diffTokens(before: string, after: string): DiffToken[] {
   const bRaw = bTokens.map((t) => t.raw)
   const aRaw = aTokens.map((t) => t.raw)
 
-  // LCS table
   const m = bRaw.length
   const n = aRaw.length
   const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
@@ -530,7 +699,6 @@ export function diffTokens(before: string, after: string): DiffToken[] {
     }
   }
 
-  // Backtrack
   const result: DiffToken[] = []
   let i = 0, j = 0
   while (i < m || j < n) {

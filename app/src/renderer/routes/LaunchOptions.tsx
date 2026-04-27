@@ -480,17 +480,17 @@ function SingleGameEditor({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 space-y-4 flex-1 overflow-y-auto">
-        {/* Game header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
-            <h2 className="font-semibold truncate">{game.name}</h2>
-            {isDirty && <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" title="Unsaved changes (Ctrl+S to save)" />}
-          </div>
-          <Badge variant="secondary" className="text-xs shrink-0 ml-2">#{game.appId}</Badge>
+      {/* Game header — fixed */}
+      <div className="px-4 pt-4 pb-2 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <h2 className="font-semibold truncate">{game.name}</h2>
+          {isDirty && <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" title="Unsaved changes (Ctrl+S to save)" />}
         </div>
+        <Badge variant="secondary" className="text-xs shrink-0 ml-2">#{game.appId}</Badge>
+      </div>
 
-        {/* Structured panel */}
+      {/* Structured panel — fills all remaining space, scrolls internally */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4">
         <StructuredPanel
           model={model}
           onModelChange={onModelChange}
@@ -498,39 +498,44 @@ function SingleGameEditor({
           globalEnv={globalEnv}
           disabledReason={steamRunning ? 'steam-running' : null}
         />
+      </div>
 
+      {/* Raw editor + preview — fixed above action bar */}
+      <div className="px-4 pt-2 pb-1 space-y-2 border-t border-border/50 shrink-0">
         {/* Raw editor */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Raw launch options</label>
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Raw launch options</label>
+            <div className="flex items-center gap-3 text-[11px]">
+              <span className={charWarning ? 'text-amber-400' : 'text-muted-foreground'}>
+                {charCount} chars{charWarning ? ' — may truncate' : ''}
+              </span>
+              <button
+                onClick={handleCopyRaw}
+                className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+                title="Copy raw to clipboard"
+              >
+                <Clipboard className="h-3 w-3" />
+                Copy raw
+              </button>
+            </div>
+          </div>
           <Textarea
             value={editValue}
             onChange={(e) => onRawChange(e.target.value)}
             placeholder={`e.g. mangohud gamemode ${COMMAND_TOKEN}`}
-            className="font-mono text-sm h-20 resize-none"
+            className="font-mono text-sm h-16 resize-none"
             disabled={steamRunning}
             data-selectable
           />
-          <div className="flex items-center justify-between text-[11px]">
-            <span className={charWarning ? 'text-amber-400' : 'text-muted-foreground'}>
-              {charCount} chars{charWarning ? ' — Steam may truncate above 256' : ''}
-            </span>
-            <button
-              onClick={handleCopyRaw}
-              className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
-              title="Copy raw to clipboard"
-            >
-              <Clipboard className="h-3 w-3" />
-              Copy raw
-            </button>
-          </div>
         </div>
 
         {/* Live preview / diff */}
         <div>
-          <p className="text-xs text-muted-foreground mb-1.5">
+          <p className="text-xs text-muted-foreground mb-1">
             {diffResult ? 'Changes' : 'Preview'}
           </p>
-          <div className="flex flex-wrap gap-1 rounded-md bg-black/30 px-3 py-2 min-h-[2rem]">
+          <div className="flex flex-wrap gap-1 rounded-md bg-black/30 px-3 py-1.5 min-h-[1.75rem]">
             {diffResult
               ? diffResult.map((t, i) => <DiffChip key={i} token={t} />)
               : previewTokens.map((t, i) => <TokenChip key={i} token={t} />)}
@@ -539,7 +544,7 @@ function SingleGameEditor({
       </div>
 
       {/* Sticky action bar */}
-      <div className="sticky bottom-0 px-4 py-3 border-t border-border bg-background/95 backdrop-blur-sm flex gap-2 flex-wrap">
+      <div className="sticky bottom-0 px-4 py-3 border-t border-border bg-background/95 backdrop-blur-sm flex gap-2 flex-wrap shrink-0">
         <Button variant="ghost" size="sm" onClick={onRevert} disabled={!isDirty}>
           Revert
         </Button>
@@ -604,67 +609,73 @@ function MultiGameEditor({
   const editorDisabled = steamRunning || batchOp === 'clear' || batchOp === 'snippet' || batchOp === 'replace'
 
   return (
-    <div className="p-4 space-y-4">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2">
-        <Badge variant="secondary">{selCount} games selected</Badge>
-        <button onClick={onClearSelection} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-0.5">
-          <X className="h-3 w-3" /> Clear
-        </button>
-      </div>
-
-      {/* Op selector */}
-      <div>
-        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Operation</label>
-        <Select value={batchOp} onChange={(e) => onBatchOpChange(e.target.value as BatchOp)} className="w-full">
-          {BATCH_OPS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </Select>
-      </div>
-
-      {/* Op-specific inputs */}
-      {batchOp === 'replace' && (
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Find</label>
-            <Input value={batchFindText} onChange={(e) => onBatchFindChange(e.target.value)} placeholder="Text to find" className="h-8 text-xs" />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Replace with</label>
-            <Input value={batchReplaceText} onChange={(e) => onBatchReplaceChange(e.target.value)} placeholder="Replacement" className="h-8 text-xs" />
-          </div>
+    <div className="flex flex-col h-full">
+      {/* Fixed header: breadcrumb + op selector + op-specific inputs */}
+      <div className="px-4 pt-4 pb-2 space-y-3 shrink-0">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary">{selCount} games selected</Badge>
+          <button onClick={onClearSelection} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-0.5">
+            <X className="h-3 w-3" /> Clear
+          </button>
         </div>
-      )}
 
-      {batchOp === 'snippet' && (
+        {/* Op selector */}
         <div>
-          <label className="text-xs text-muted-foreground mb-1 block">Snippet to insert</label>
-          <Select value={batchSnippet} onChange={(e) => onBatchSnippetChange(e.target.value)} className="w-full">
-            {BATCH_SNIPPETS.map((s) => (
-              <option key={s.id} value={s.snippet}>{s.label}</option>
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Operation</label>
+          <Select value={batchOp} onChange={(e) => onBatchOpChange(e.target.value as BatchOp)} className="w-full">
+            {BATCH_OPS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </Select>
         </div>
-      )}
 
-      {batchOp === 'clear' && (
-        <Card className="px-3 py-2">
-          <p className="text-xs text-muted-foreground">This will remove all launch options for the {selCount} selected games.</p>
-        </Card>
-      )}
+        {/* Op-specific inputs */}
+        {batchOp === 'replace' && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Find</label>
+              <Input value={batchFindText} onChange={(e) => onBatchFindChange(e.target.value)} placeholder="Text to find" className="h-8 text-xs" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Replace with</label>
+              <Input value={batchReplaceText} onChange={(e) => onBatchReplaceChange(e.target.value)} placeholder="Replacement" className="h-8 text-xs" />
+            </div>
+          </div>
+        )}
 
-      {/* Structured + Raw editor (always shown, with appropriate disabledReason) */}
-      <StructuredPanel
-        model={model}
-        onModelChange={onModelChange}
-        gpuInfo={gpuInfo}
-        globalEnv={globalEnv}
-        disabledReason={steamRunning ? 'steam-running' : !currentOpMeta.needsEditor ? 'op-no-editor' : null}
-      />
+        {batchOp === 'snippet' && (
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Snippet to insert</label>
+            <Select value={batchSnippet} onChange={(e) => onBatchSnippetChange(e.target.value)} className="w-full">
+              {BATCH_SNIPPETS.map((s) => (
+                <option key={s.id} value={s.snippet}>{s.label}</option>
+              ))}
+            </Select>
+          </div>
+        )}
 
+        {batchOp === 'clear' && (
+          <Card className="px-3 py-2">
+            <p className="text-xs text-muted-foreground">This will remove all launch options for the {selCount} selected games.</p>
+          </Card>
+        )}
+      </div>
+
+      {/* Structured panel — fills remaining vertical space, scrolls internally */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4">
+        <StructuredPanel
+          model={model}
+          onModelChange={onModelChange}
+          gpuInfo={gpuInfo}
+          globalEnv={globalEnv}
+          disabledReason={steamRunning ? 'steam-running' : !currentOpMeta.needsEditor ? 'op-no-editor' : null}
+        />
+      </div>
+
+      {/* Raw editor for applicable ops — fixed above action bar */}
       {currentOpMeta.needsEditor && (
-        <div className="space-y-1.5">
+        <div className="px-4 pt-2 pb-1 border-t border-border/50 shrink-0">
           <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             {batchOp === 'set' ? 'New value (replaces each game)' : batchOp === 'prefix' ? 'Prefix to add' : 'Suffix to add'}
           </label>
@@ -672,65 +683,67 @@ function MultiGameEditor({
             value={editValue}
             onChange={(e) => onRawChange(e.target.value)}
             placeholder={`e.g. mangohud gamemode ${COMMAND_TOKEN}`}
-            className="font-mono text-sm h-20 resize-none"
+            className="font-mono text-sm h-16 resize-none mt-1"
             disabled={steamRunning}
             data-selectable
           />
         </div>
       )}
 
-      {/* Action bar */}
-      <div className="flex gap-2 flex-wrap">
-        <Button variant="outline" size="sm" onClick={onPreview} disabled={batchOp === 'replace' && !batchFindText}>
-          Preview changes
-        </Button>
-        {batchPreviewed && (
-          <Button
-            size="sm"
-            onClick={onApply}
-            disabled={!batchPreviewed || !batchPreview.length || batchApplying || steamRunning}
-            className="gap-1.5"
-          >
-            <Save className="h-3.5 w-3.5" />
-            {batchApplying ? 'Applying…' : `Apply to ${batchPreview.length} games`}
+      {/* Action bar + preview table — fixed at bottom */}
+      <div className="px-4 py-3 border-t border-border bg-background/95 backdrop-blur-sm shrink-0 space-y-2">
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={onPreview} disabled={batchOp === 'replace' && !batchFindText}>
+            Preview changes
           </Button>
-        )}
-      </div>
-
-      {/* Before/After preview table */}
-      {batchPreviewed && batchPreview.length > 0 && (
-        <div className="space-y-1.5">
-          <button
-            onClick={onTogglePreview}
-            className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            {batchPreviewOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            {batchPreviewOpen ? 'Hide' : 'Show'} preview ({batchPreview.length} games)
-          </button>
-          {batchPreviewOpen && (
-            <div className="overflow-y-auto max-h-52 rounded-md border border-border">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-muted/80">
-                  <tr>
-                    <th className="px-2 py-1.5 text-left font-medium text-muted-foreground w-1/3">Game</th>
-                    <th className="px-2 py-1.5 text-left font-medium text-muted-foreground w-1/3">Before</th>
-                    <th className="px-2 py-1.5 text-left font-medium text-muted-foreground w-1/3">After</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {batchPreview.map((row) => (
-                    <tr key={row.appId} className="border-t border-border/40 hover:bg-muted/20">
-                      <td className="px-2 py-1 font-medium truncate max-w-[150px]" title={row.name}>{row.name}</td>
-                      <td className="px-2 py-1 font-mono text-muted-foreground truncate max-w-[150px]" title={row.before}>{row.before || <em>empty</em>}</td>
-                      <td className="px-2 py-1 font-mono truncate max-w-[150px]" title={row.after}>{row.after || <em>empty</em>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {batchPreviewed && (
+            <Button
+              size="sm"
+              onClick={onApply}
+              disabled={!batchPreviewed || !batchPreview.length || batchApplying || steamRunning}
+              className="gap-1.5"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {batchApplying ? 'Applying…' : `Apply to ${batchPreview.length} games`}
+            </Button>
           )}
         </div>
-      )}
+
+        {/* Before/After preview table */}
+        {batchPreviewed && batchPreview.length > 0 && (
+          <div className="space-y-1">
+            <button
+              onClick={onTogglePreview}
+              className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              {batchPreviewOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              {batchPreviewOpen ? 'Hide' : 'Show'} preview ({batchPreview.length} games)
+            </button>
+            {batchPreviewOpen && (
+              <div className="overflow-y-auto max-h-44 rounded-md border border-border">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-muted/80">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground w-1/3">Game</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground w-1/3">Before</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground w-1/3">After</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {batchPreview.map((row) => (
+                      <tr key={row.appId} className="border-t border-border/40 hover:bg-muted/20">
+                        <td className="px-2 py-1 font-medium truncate max-w-[150px]" title={row.name}>{row.name}</td>
+                        <td className="px-2 py-1 font-mono text-muted-foreground truncate max-w-[150px]" title={row.before}>{row.before || <em>empty</em>}</td>
+                        <td className="px-2 py-1 font-mono truncate max-w-[150px]" title={row.after}>{row.after || <em>empty</em>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
