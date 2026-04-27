@@ -106,6 +106,7 @@ jobs:
       - name: List dist artifacts
         run: ls -la app/dist/
 
+      # Creates the Git tag via API when tag_name is set — no separate git push needed.
       - name: Upload AppImage
         uses: softprops/action-gh-release@v2
         with:
@@ -118,9 +119,3 @@ jobs:
             app/dist/*.AppImage.sha512
             app/dist/*.pkg.tar.zst
             app/dist/latest-linux.yml
-
-      - name: Create tag (manual dispatch only)
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          git tag "${{ steps.version.outputs.TAG }}"
-          git push origin "${{ steps.version.outputs.TAG }}"
