@@ -114,8 +114,8 @@ jobs:
           prerelease: ${{ inputs.prerelease || false }}
           draft: ${{ inputs.draft || false }}
           generate_release_notes: true
+          # electron-builder names pacman output *.pacman (not *.pkg.tar.zst). latest-linux.yml lists both AppImage + pacman for electron-updater.
           files: |
             app/dist/*.AppImage
-            app/dist/*.AppImage.sha512
-            app/dist/*.pkg.tar.zst
+            app/dist/*.pacman
             app/dist/latest-linux.yml

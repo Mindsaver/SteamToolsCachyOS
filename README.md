@@ -32,6 +32,8 @@ curl -fsSL -H "Accept: application/vnd.github.v3.raw" \
 
 Remove later: `~/.local/share/SteamToolsCachyOS/uninstall-github-appimage.sh`.
 
+**In-app updates** for this extracted install download the **`SteamToolsCachyOS-Linux-x86_64.pacman`** asset from GitHub Releases (`electron-builder` produces a `.pacman` package, not `.pkg.tar.zst`) and apply it with **`pacman -U`** when you choose *Restart & install*. Running the `.AppImage` file directly uses the AppImage updater (`APPIMAGE` is set).
+
 For a **fork**, set `STEAMTOOLS_INSTALL_REPO=owner/repo` before piping either one-liner (the in-app updater uses `STEAMTOOLS_UPDATE_REPO` for the same purpose).
 
 ### Release zip (manual)
