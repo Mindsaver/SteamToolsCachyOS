@@ -6,9 +6,11 @@
 
 ## Install
 
-Pick one of these; you only need **curl**, **python3**, and **unzip** on `PATH` for the one-liner.
+Pick **either** the classic PyInstaller zip installer **or** the Electron **AppImage** installer (same app menu name and `~/.local` paths; re-running one replaces the other).
 
-### One-liner (latest GitHub release)
+**Zip one-liner** needs **curl**, **python3**, and **unzip**. **AppImage one-liner** needs **curl** and **python3** only; running the AppImage itself still needs **FUSE 2** (`libfuse.so.2`), e.g. **`fuse2`** on Arch/CachyOS or **`libfuse2`** on Debian/Ubuntu.
+
+### One-liner (latest GitHub release — PyInstaller zip)
 
 Downloads the latest [release](https://github.com/Mindsaver/SteamToolsCachyOS/releases) asset `SteamToolsCachyOS-Linux-x86_64.zip`, unpacks it, and runs `install.sh`:
 
@@ -16,7 +18,17 @@ Downloads the latest [release](https://github.com/Mindsaver/SteamToolsCachyOS/re
 curl -fsSL https://raw.githubusercontent.com/Mindsaver/SteamToolsCachyOS/main/scripts/install-latest-github.sh | bash
 ```
 
-For a **fork**, set `STEAMTOOLS_INSTALL_REPO=owner/repo` before piping (the in-app updater uses `STEAMTOOLS_UPDATE_REPO` for the same purpose).
+### One-liner (latest GitHub release — Electron AppImage)
+
+Downloads asset `SteamToolsCachyOS-Linux-x86_64.AppImage`, installs it under `~/.local/share/SteamToolsCachyOS/`, registers the menu entry, and symlinks `~/.local/bin/SteamToolsCachyOS`. Requires that the **latest** GitHub release includes this AppImage (from the Release Electron workflow).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Mindsaver/SteamToolsCachyOS/main/scripts/install-latest-appimage-github.sh | bash
+```
+
+Remove later: `~/.local/share/SteamToolsCachyOS/uninstall-github-appimage.sh`.
+
+For a **fork**, set `STEAMTOOLS_INSTALL_REPO=owner/repo` before piping either one-liner (the in-app updater uses `STEAMTOOLS_UPDATE_REPO` for the same purpose).
 
 ### Release zip (manual)
 
@@ -33,7 +45,8 @@ Each install includes `**RELEASE_VERSION`** (semver) and `**VERSION`** (line 1: 
 ## Uninstall
 
 - **From an unpacked release or build folder** (same directory as `install.sh`): run `./uninstall.sh` in a terminal.
-- **After a normal install** (you no longer have the zip folder): run the copy kept with the app:
+- **AppImage one-liner install**: run `~/.local/share/SteamToolsCachyOS/uninstall-github-appimage.sh` (removes that AppImage install’s menu entry, symlink, and files from the script).
+- **After a normal zip install** (you no longer have the zip folder): run the copy kept with the app:
   ```bash
   ~/.local/share/SteamToolsCachyOS/uninstall.sh
   ```
