@@ -58,6 +58,8 @@ const realApi = {
 
   detectGpu: () => ipcRenderer.invoke(IPC.GPU_DETECT),
   getCompatInfo: (appId: number) => ipcRenderer.invoke(IPC.COMPAT_GET, appId),
+  getGlobalEnvOverrides: (appId: number): Promise<Record<string, string>> =>
+    ipcRenderer.invoke(IPC.STEAM_GET_GLOBAL_ENV, appId),
 
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.SETTINGS_GET),
   setSettings: (settings: AppSettings) => ipcRenderer.invoke(IPC.SETTINGS_SET, settings),

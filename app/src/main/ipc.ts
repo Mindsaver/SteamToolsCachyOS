@@ -11,6 +11,7 @@ import {
 } from './services/steam/localconfig'
 import { isSteamRunning, closeSteam } from './services/steam/processes'
 import { loadCompatMappings, getCompatInfo } from './services/steam/compat'
+import { getGlobalEnvOverridesForApp } from './services/steam/userSettings'
 import { runSymlinkHub } from './services/symlink/hub'
 import { analyzeDll } from './services/fsr/ffx'
 import { copyDllToGames } from './services/fsr/copy'
@@ -239,6 +240,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (!installPath) return null
     const mappings = loadCompatMappings(installPath)
     return getCompatInfo(mappings, appId)
+  })
+
+  ipcMain.handle(IPC.STEAM_GET_GLOBAL_ENV, async (_e, appId: number) => {
+    const settings = loadSettings()
+    const installPath = settings.steamPath || resolveSteamInstall()
+    if (!installPath) return {}
+    return getGlobalEnvOverridesForApp(installPath, appId)
   })
 
   // ── Settings ───────────────────────────────────────────────────────────────

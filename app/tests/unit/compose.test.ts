@@ -11,6 +11,9 @@ import {
   emptyGamescope,
   isPresetActive,
   setPreset,
+  presetState,
+  tokenize,
+  diffTokens,
   ENV_PRESETS,
 } from '../../src/shared/launchOptions/compose'
 
@@ -243,5 +246,130 @@ describe('ENV_PRESETS + setPreset', () => {
   it('all presets have unique IDs', () => {
     const ids = ENV_PRESETS.map((p) => p.id)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+// ── presetState ───────────────────────────────────────────────────────────────
+
+describe('presetState', () => {
+  const preset = ENV_PRESETS.find((p) => p.id === 'proton_no_esync')!  // PROTON_NO_ESYNC=1
+
+  it('returns off when not in model and no global', () => {
+    const m = emptyModel()
+    expect(presetState(m, preset, {}).kind).toBe('off')
+  })
+
+  it('returns on when active locally and no global', () => {
+    const m = parseLaunchOptions('PROTON_NO_ESYNC=1 %command%')
+    expect(presetState(m, preset, {}).kind).toBe('on')
+  })
+
+  it('returns global-on when user_settings sets same value and not locally active', () => {
+    const m = emptyModel()
+    const state = presetState(m, preset, { PROTON_NO_ESYNC: '1' })
+    expect(state.kind).toBe('global-on')
+  })
+
+  it('returns global-other when user_settings sets different value and not locally active', () => {
+    const m = emptyModel()
+    const state = presetState(m, preset, { PROTON_NO_ESYNC: '0' })
+    expect(state.kind).toBe('global-other')
+    expect((state as { kind: 'global-other'; value: string }).value).toBe('0')
+  })
+
+  it('returns local-overrides-global when locally active and global has different value', () => {
+    const m = parseLaunchOptions('PROTON_NO_ESYNC=1 %command%')
+    const state = presetState(m, preset, { PROTON_NO_ESYNC: '0' })
+    expect(state.kind).toBe('local-overrides-global')
+    expect((state as { kind: 'local-overrides-global'; globalValue: string }).globalValue).toBe('0')
+  })
+
+  it('returns on (not local-overrides-global) when local matches global', () => {
+    const m = parseLaunchOptions('PROTON_NO_ESYNC=1 %command%')
+    const state = presetState(m, preset, { PROTON_NO_ESYNC: '1' })
+    expect(state.kind).toBe('on')
+  })
+
+  it('returns local-off when local has explicit counter-value (KEY=0) against global KEY=1', () => {
+    // Simulates the case where user clicked "disable" on a globally-set preset
+    // setPreset writes PROTON_NO_ESYNC=0 to counter the global PROTON_NO_ESYNC=1
+    const m = parseLaunchOptions('PROTON_NO_ESYNC=0 %command%')
+    const state = presetState(m, preset, { PROTON_NO_ESYNC: '1' })
+    expect(state.kind).toBe('local-off')
+  })
+})
+
+// ── setPreset with globalEnv (counter-value) ─────────────────────────────────
+
+describe('setPreset with globalEnv', () => {
+  const preset = ENV_PRESETS.find((p) => p.id === 'proton_no_esync')!
+
+  it('writes off-value KEY=0 when disabling a globally-enabled preset', () => {
+    const m = emptyModel()
+    const result = setPreset(m, preset, false, { PROTON_NO_ESYNC: '1' })
+    expect(result.env['PROTON_NO_ESYNC']).toBe('0')
+    expect(result.envOrder).toContain('PROTON_NO_ESYNC')
+  })
+
+  it('removes key entirely when no global env and disabling', () => {
+    const m = parseLaunchOptions('PROTON_NO_ESYNC=1 %command%')
+    const result = setPreset(m, preset, false, {})
+    expect(result.env['PROTON_NO_ESYNC']).toBeUndefined()
+    expect(result.envOrder).not.toContain('PROTON_NO_ESYNC')
+  })
+
+  it('sets the value normally when enabling', () => {
+    const m = emptyModel()
+    const result = setPreset(m, preset, true, { PROTON_NO_ESYNC: '1' })
+    expect(result.env['PROTON_NO_ESYNC']).toBe('1')
+  })
+})
+
+// ── tokenize ──────────────────────────────────────────────────────────────────
+
+describe('tokenize', () => {
+  it('classifies %command% as command', () => {
+    const tokens = tokenize('%command%')
+    expect(tokens[0].kind).toBe('command')
+  })
+
+  it('classifies mangohud as wrapper', () => {
+    const tokens = tokenize('mangohud %command%')
+    expect(tokens[0].kind).toBe('wrapper')
+  })
+
+  it('classifies KEY=VALUE as env', () => {
+    const tokens = tokenize('PROTON_LOG=1 %command%')
+    expect(tokens[0].kind).toBe('env')
+    expect(tokens[0].raw).toBe('PROTON_LOG=1')
+  })
+
+  it('returns empty array for empty string', () => {
+    expect(tokenize('')).toEqual([])
+  })
+})
+
+// ── diffTokens ────────────────────────────────────────────────────────────────
+
+describe('diffTokens', () => {
+  it('marks added tokens', () => {
+    const diff = diffTokens('mangohud %command%', 'mangohud gamemode %command%')
+    const added = diff.filter((t) => t.status === 'added')
+    expect(added.map((t) => t.raw)).toContain('gamemode')
+  })
+
+  it('marks removed tokens', () => {
+    const diff = diffTokens('mangohud gamemode %command%', 'mangohud %command%')
+    const removed = diff.filter((t) => t.status === 'removed')
+    expect(removed.map((t) => t.raw)).toContain('gamemode')
+  })
+
+  it('marks same tokens', () => {
+    const diff = diffTokens('mangohud %command%', 'mangohud %command%')
+    expect(diff.every((t) => t.status === 'same')).toBe(true)
+  })
+
+  it('returns empty for both empty', () => {
+    expect(diffTokens('', '')).toEqual([])
   })
 })

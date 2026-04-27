@@ -6,6 +6,7 @@ export const IPC = {
   STEAM_IS_RUNNING: 'steam:is-running',
   STEAM_CLOSE: 'steam:close',
   STEAM_LIST_ACCOUNTS: 'steam:list-accounts',
+  STEAM_GET_GLOBAL_ENV: 'steam:get-global-env',
 
   // Games
   GAMES_LIST: 'games:list',

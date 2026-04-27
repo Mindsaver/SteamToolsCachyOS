@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import {
-  Save, RefreshCw, AlertTriangle, FolderOpen, Undo2, Copy, X, ChevronDown, ChevronUp,
+  Save, RefreshCw, AlertTriangle, FolderOpen, Undo2, Copy, X, ChevronDown, ChevronUp, Clipboard,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Card } from '../components/ui/card'
@@ -21,9 +21,43 @@ import {
   transformLaunchOptions,
   BATCH_SNIPPETS,
   COMMAND_TOKEN,
+  tokenize,
+  diffTokens,
 } from '../../shared/launchOptions/compose'
-import type { LaunchOptionsModel } from '../../shared/launchOptions/compose'
+import type { LaunchOptionsModel, ClassifiedToken, DiffToken } from '../../shared/launchOptions/compose'
 import type { InstalledGame, GpuInfo, SteamAccount, BatchOp, BatchTransformPreviewRow } from '../../shared/types'
+
+// ── Token chip rendering helpers ─────────────────────────────────────────────
+
+const TOKEN_CLS: Record<ClassifiedToken['kind'], string> = {
+  command: 'bg-primary/20 text-primary font-semibold',
+  wrapper: 'bg-muted text-foreground',
+  env: 'bg-muted/60 text-muted-foreground font-mono',
+  gamescope: 'bg-muted/60 text-muted-foreground',
+  other: 'text-muted-foreground',
+}
+
+function TokenChip({ token }: { token: ClassifiedToken }) {
+  return (
+    <span className={`inline-block rounded px-1 py-0.5 text-[11px] leading-tight ${TOKEN_CLS[token.kind]}`}>
+      {token.raw}
+    </span>
+  )
+}
+
+const DIFF_CLS: Record<DiffToken['status'], string> = {
+  same: TOKEN_CLS.other,
+  added: 'bg-green-500/20 text-green-400 font-mono',
+  removed: 'bg-red-500/20 text-red-400 line-through font-mono',
+}
+
+function DiffChip({ token }: { token: DiffToken }) {
+  return (
+    <span className={`inline-block rounded px-1 py-0.5 text-[11px] leading-tight ${DIFF_CLS[token.status]}`}>
+      {token.raw}
+    </span>
+  )
+}
 
 // ── Batch op metadata ──────────────────────────────────────────────────────
 
@@ -70,6 +104,9 @@ export function LaunchOptions() {
   // ── Copy-to dialog ──────────────────────────────────────────────────────
   const [copyDialogOpen, setCopyDialogOpen] = useState(false)
 
+  // ── Global env (user_settings.py) ──────────────────────────────────────
+  const [globalEnv, setGlobalEnv] = useState<Record<string, string>>({})
+
   // ── Saving ──────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false)
 
@@ -94,6 +131,23 @@ export function LaunchOptions() {
     loadAll()
     api.detectGpu().then(setGpuInfo)
   }, [])
+
+  // ── Keyboard shortcuts ───────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (document.activeElement as HTMLElement)?.tagName
+      const inInput = tag === 'INPUT' || tag === 'TEXTAREA'
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault()
+        if (singleGame && isDirty && !steamRunning) handleSave()
+      }
+      if (e.key === 'Escape' && !inInput && selCount > 0) {
+        setSelectedAppIds(new Set())
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [singleGame, isDirty, steamRunning, selCount])
 
   // Reload launch options from selected game whenever account switches
   useEffect(() => {
@@ -125,14 +179,17 @@ export function LaunchOptions() {
         syncing.current = true
         setModel(parseLaunchOptions(v))
         syncing.current = false
+        // Load global env overrides for this game's Proton tool
+        api.getGlobalEnvOverrides(game.appId).then((env) => setGlobalEnv(env ?? {}))
       }
     } else {
-      // Multi or zero: reset editor to empty
+      // Multi or zero: reset editor to empty, clear global env
       setEditValue('')
       setBaseline('')
       syncing.current = true
       setModel(parseLaunchOptions(''))
       syncing.current = false
+      setGlobalEnv({})
     }
     // Reset batch state
     setBatchPreviewed(false)
@@ -325,11 +382,13 @@ export function LaunchOptions() {
             <SingleGameEditor
               game={singleGame}
               editValue={editValue}
+              baseline={baseline}
               model={model}
               isDirty={isDirty}
               steamRunning={steamRunning}
               saving={saving}
               gpuInfo={gpuInfo}
+              globalEnv={globalEnv}
               onRawChange={handleRawChange}
               onModelChange={handleModelChange}
               onSave={handleSave}
@@ -345,6 +404,7 @@ export function LaunchOptions() {
               model={model}
               steamRunning={steamRunning}
               gpuInfo={gpuInfo}
+              globalEnv={globalEnv}
               batchOp={batchOp}
               batchFindText={batchFindText}
               batchReplaceText={batchReplaceText}
@@ -390,11 +450,13 @@ export function LaunchOptions() {
 interface SingleGameEditorProps {
   game: InstalledGame
   editValue: string
+  baseline: string
   model: LaunchOptionsModel
   isDirty: boolean
   steamRunning: boolean
   saving: boolean
   gpuInfo: GpuInfo | null
+  globalEnv: Record<string, string>
   onRawChange: (v: string) => void
   onModelChange: (m: LaunchOptionsModel) => void
   onSave: () => void
@@ -403,50 +465,81 @@ interface SingleGameEditorProps {
 }
 
 function SingleGameEditor({
-  game, editValue, model, isDirty, steamRunning, saving, gpuInfo,
+  game, editValue, baseline, model, isDirty, steamRunning, saving, gpuInfo, globalEnv,
   onRawChange, onModelChange, onSave, onRevert, onCopyTo,
 }: SingleGameEditorProps) {
   const charCount = editValue.length
-  const preview = editValue.trim() || COMMAND_TOKEN
+  const charWarning = charCount > 256
+  const isDirtyDiff = isDirty && baseline !== editValue
+  const diffResult = isDirtyDiff ? diffTokens(baseline, editValue) : null
+  const previewTokens = tokenize(editValue.trim() || COMMAND_TOKEN)
+
+  const handleCopyRaw = () => {
+    navigator.clipboard.writeText(editValue).then(() => toast.success('Copied to clipboard'))
+  }
 
   return (
-    <div className="p-4 space-y-4">
-      {/* Game header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 min-w-0">
-          <h2 className="font-semibold truncate">{game.name}</h2>
-          {isDirty && <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" title="Unsaved changes" />}
+    <div className="flex flex-col h-full">
+      <div className="p-4 space-y-4 flex-1 overflow-y-auto">
+        {/* Game header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className="font-semibold truncate">{game.name}</h2>
+            {isDirty && <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" title="Unsaved changes (Ctrl+S to save)" />}
+          </div>
+          <Badge variant="secondary" className="text-xs shrink-0 ml-2">#{game.appId}</Badge>
         </div>
-        <Badge variant="secondary" className="text-xs shrink-0 ml-2">#{game.appId}</Badge>
-      </div>
 
-      {/* Structured panel */}
-      <StructuredPanel model={model} onModelChange={onModelChange} gpuInfo={gpuInfo} disabled={steamRunning} />
-
-      {/* Raw editor */}
-      <div className="space-y-1.5">
-        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Raw launch options</label>
-        <Textarea
-          value={editValue}
-          onChange={(e) => onRawChange(e.target.value)}
-          placeholder={`e.g. mangohud gamemode ${COMMAND_TOKEN}`}
-          className="font-mono text-sm h-20 resize-none"
-          disabled={steamRunning}
-          data-selectable
+        {/* Structured panel */}
+        <StructuredPanel
+          model={model}
+          onModelChange={onModelChange}
+          gpuInfo={gpuInfo}
+          globalEnv={globalEnv}
+          disabledReason={steamRunning ? 'steam-running' : null}
         />
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-          <span>{charCount} characters</span>
+
+        {/* Raw editor */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Raw launch options</label>
+          <Textarea
+            value={editValue}
+            onChange={(e) => onRawChange(e.target.value)}
+            placeholder={`e.g. mangohud gamemode ${COMMAND_TOKEN}`}
+            className="font-mono text-sm h-20 resize-none"
+            disabled={steamRunning}
+            data-selectable
+          />
+          <div className="flex items-center justify-between text-[11px]">
+            <span className={charWarning ? 'text-amber-400' : 'text-muted-foreground'}>
+              {charCount} chars{charWarning ? ' — Steam may truncate above 256' : ''}
+            </span>
+            <button
+              onClick={handleCopyRaw}
+              className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+              title="Copy raw to clipboard"
+            >
+              <Clipboard className="h-3 w-3" />
+              Copy raw
+            </button>
+          </div>
+        </div>
+
+        {/* Live preview / diff */}
+        <div>
+          <p className="text-xs text-muted-foreground mb-1.5">
+            {diffResult ? 'Changes' : 'Preview'}
+          </p>
+          <div className="flex flex-wrap gap-1 rounded-md bg-black/30 px-3 py-2 min-h-[2rem]">
+            {diffResult
+              ? diffResult.map((t, i) => <DiffChip key={i} token={t} />)
+              : previewTokens.map((t, i) => <TokenChip key={i} token={t} />)}
+          </div>
         </div>
       </div>
 
-      {/* Live preview */}
-      <div>
-        <p className="text-xs text-muted-foreground mb-1">Preview</p>
-        <code className="block text-xs font-mono bg-black/30 rounded px-3 py-2 text-green-400 break-all">{preview}</code>
-      </div>
-
-      {/* Action bar */}
-      <div className="flex gap-2 flex-wrap">
+      {/* Sticky action bar */}
+      <div className="sticky bottom-0 px-4 py-3 border-t border-border bg-background/95 backdrop-blur-sm flex gap-2 flex-wrap">
         <Button variant="ghost" size="sm" onClick={onRevert} disabled={!isDirty}>
           Revert
         </Button>
@@ -455,6 +548,7 @@ function SingleGameEditor({
           onClick={onSave}
           disabled={saving || steamRunning || !isDirty}
           className="gap-1.5"
+          title="Ctrl+S"
         >
           <Save className="h-3.5 w-3.5" />
           {saving ? 'Saving…' : 'Save'}
@@ -476,6 +570,7 @@ interface MultiGameEditorProps {
   model: LaunchOptionsModel
   steamRunning: boolean
   gpuInfo: GpuInfo | null
+  globalEnv: Record<string, string>
   batchOp: BatchOp
   batchFindText: string
   batchReplaceText: string
@@ -498,7 +593,7 @@ interface MultiGameEditorProps {
 }
 
 function MultiGameEditor({
-  selCount, editValue, model, steamRunning, gpuInfo,
+  selCount, editValue, model, steamRunning, gpuInfo, globalEnv,
   batchOp, batchFindText, batchReplaceText, batchSnippet,
   batchPreview, batchPreviewed, batchApplying, batchPreviewOpen,
   currentOpMeta,
@@ -559,24 +654,29 @@ function MultiGameEditor({
         </Card>
       )}
 
-      {/* Structured + Raw editor (for set/prefix/suffix) */}
+      {/* Structured + Raw editor (always shown, with appropriate disabledReason) */}
+      <StructuredPanel
+        model={model}
+        onModelChange={onModelChange}
+        gpuInfo={gpuInfo}
+        globalEnv={globalEnv}
+        disabledReason={steamRunning ? 'steam-running' : !currentOpMeta.needsEditor ? 'op-no-editor' : null}
+      />
+
       {currentOpMeta.needsEditor && (
-        <>
-          <StructuredPanel model={model} onModelChange={onModelChange} gpuInfo={gpuInfo} disabled={editorDisabled} />
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              {batchOp === 'set' ? 'New value (replaces each game)' : batchOp === 'prefix' ? 'Prefix to add' : 'Suffix to add'}
-            </label>
-            <Textarea
-              value={editValue}
-              onChange={(e) => onRawChange(e.target.value)}
-              placeholder={`e.g. mangohud gamemode ${COMMAND_TOKEN}`}
-              className="font-mono text-sm h-20 resize-none"
-              disabled={editorDisabled}
-              data-selectable
-            />
-          </div>
-        </>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            {batchOp === 'set' ? 'New value (replaces each game)' : batchOp === 'prefix' ? 'Prefix to add' : 'Suffix to add'}
+          </label>
+          <Textarea
+            value={editValue}
+            onChange={(e) => onRawChange(e.target.value)}
+            placeholder={`e.g. mangohud gamemode ${COMMAND_TOKEN}`}
+            className="font-mono text-sm h-20 resize-none"
+            disabled={steamRunning}
+            data-selectable
+          />
+        </div>
       )}
 
       {/* Action bar */}

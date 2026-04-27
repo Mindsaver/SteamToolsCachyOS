@@ -110,6 +110,18 @@ export const mockApi = {
     await delay(60)
     return MOCK_COMPAT_INFO[appId] ?? { toolName: null, toolDescription: 'global default', sourceLabel: 'global' }
   },
+  getGlobalEnvOverrides: async (appId: number): Promise<Record<string, string>> => {
+    await delay(60)
+    // Return a fixture for ~25% of games (those whose appId % 4 === 0)
+    // so the tri-state UI is exercisable in dev:sim
+    if (appId % 4 === 0) {
+      return { DXVK_ASYNC: '1', PROTON_NO_ESYNC: '1' }
+    }
+    if (appId % 4 === 1) {
+      return { MANGOHUD: '1' }
+    }
+    return {}
+  },
 
   // ── Settings ───────────────────────────────────────────────────────────────
   getSettings: async (): Promise<AppSettings> => { await delay(80); return { ...simSettings } },

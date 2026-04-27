@@ -325,12 +325,107 @@ export function isPresetActive(model: LaunchOptionsModel, preset: EnvPreset): bo
   return model.env[preset.envKey] === preset.envValue
 }
 
-export function setPreset(model: LaunchOptionsModel, preset: EnvPreset, on: boolean): LaunchOptionsModel {
+// ── Tri-state preset resolution ─────────────────────────────────────────────
+
+/**
+ * Describes how a preset relates to both the local model and global
+ * user_settings.py overrides.
+ *
+ * - off              — not active locally, no global setting for this key
+ * - on               — active in local launch options (no conflicting global)
+ * - global-on        — user_settings.py sets this env key to preset's exact value; no local override
+ * - global-other     — user_settings.py sets this env key but to a different value; no local override
+ * - local-overrides-global — local is active AND global sets a different value for the same key
+ */
+export type PresetState =
+  | { kind: 'off' }
+  | { kind: 'on' }
+  | { kind: 'local-off' }                                     // explicitly forced off via counter-value (KEY=0) against a global
+  | { kind: 'global-on' }
+  | { kind: 'global-other'; value: string }
+  | { kind: 'local-overrides-global'; globalValue: string }
+
+/** Classify the combined state of a preset given the current model and the
+ *  global env overrides extracted from user_settings.py. */
+export function presetState(
+  model: LaunchOptionsModel,
+  preset: EnvPreset,
+  globalEnv: Record<string, string> = {}
+): PresetState {
+  const localActive = isPresetActive(model, preset)
+  const globalVal = globalEnv[preset.envKey]
+  const globalMatchesPreset = globalVal === preset.envValue
+  const localVal = model.env[preset.envKey]
+
+  if (localActive) {
+    if (globalVal !== undefined && !globalMatchesPreset) {
+      return { kind: 'local-overrides-global', globalValue: globalVal }
+    }
+    return { kind: 'on' }
+  }
+
+  // Detect explicit local off-value that counters a global — e.g. KEY=0 written
+  // by presetEnvOffValue when user disabled a globally-set preset.
+  if (globalVal !== undefined) {
+    const offVal = presetEnvOffValue(preset.envKey, preset.envValue)
+    if (offVal !== null && localVal === offVal) {
+      // User has explicitly forced this off with a counter-value — distinct from plain 'off'
+      return { kind: 'local-off' }
+    }
+    if (globalMatchesPreset) return { kind: 'global-on' }
+    return { kind: 'global-other', value: globalVal }
+  }
+
+  return { kind: 'off' }
+}
+
+/**
+ * Best-effort "off" override value for a given preset env key.
+ * When user_settings.py globally enables a preset (e.g. PROTON_NO_ESYNC=1),
+ * toggling the preset OFF in the UI must write an explicit counter-value (e.g. =0)
+ * into the local launch options so Steam's wine/Proton layer sees the override.
+ * Mirrors Python's `preset_env_off_value()`.
+ */
+export function presetEnvOffValue(envKey: string, valueWhenOn: string): string | null {
+  const v = valueWhenOn.trim().toLowerCase()
+  if (['1', 'true', 'yes', 'on'].includes(v)) return '0'
+  if (['0', 'false', 'no', 'off'].includes(v)) return '1'
+  if (envKey === 'DXVK_HUD') return '0'
+  return null
+}
+
+/** Remove a preset's env key entirely, reverting to "inherit global" state.
+ *  Use this when the user wants to stop overriding a globally-set value. */
+export function clearPreset(model: LaunchOptionsModel, preset: EnvPreset): LaunchOptionsModel {
+  const next = cloneModel(model)
+  delete next.env[preset.envKey]
+  next.envOrder = next.envOrder.filter((k) => k !== preset.envKey)
+  return next
+}
+
+export function setPreset(
+  model: LaunchOptionsModel,
+  preset: EnvPreset,
+  on: boolean,
+  globalEnv: Record<string, string> = {}
+): LaunchOptionsModel {
   const next = cloneModel(model)
   if (on) {
     if (!next.env[preset.envKey]) next.envOrder.push(preset.envKey)
     next.env[preset.envKey] = preset.envValue
   } else {
+    // If a global user_settings.py value exists for this key, write the explicit
+    // off-value (e.g. KEY=0) so the local launch option counters the global setting.
+    // This mirrors Python's apply_to_model logic (lines 360-366).
+    const hasGlobal = preset.envKey in globalEnv
+    if (hasGlobal) {
+      const offVal = presetEnvOffValue(preset.envKey, preset.envValue)
+      if (offVal !== null) {
+        if (!next.env[preset.envKey]) next.envOrder.push(preset.envKey)
+        next.env[preset.envKey] = offVal
+        return next
+      }
+    }
     delete next.env[preset.envKey]
     next.envOrder = next.envOrder.filter((k) => k !== preset.envKey)
   }
@@ -384,6 +479,73 @@ export function removeSnippet(current: string, snippet: string): string {
     )
   }
   return result.trim().replace(/\s+/g, ' ')
+}
+
+// ── Token classification for preview rendering ──────────────────────────────
+
+export type TokenKind = 'command' | 'wrapper' | 'env' | 'gamescope' | 'other'
+
+export interface ClassifiedToken {
+  raw: string
+  kind: TokenKind
+}
+
+const WRAPPER_TOKENS = new Set(['mangohud', 'gamemode', 'game-performance'])
+const GAMESCOPE_FLAGS = /^(-[WHrfO]|--hdr-enabled|--expose-wayland|--adaptive-sync)/
+
+/** Classify each token in a raw launch options string for syntax-highlighted rendering. */
+export function tokenize(raw: string): ClassifiedToken[] {
+  if (!raw.trim()) return []
+  const tokens = shlexSplit(raw)
+  return tokens.map((t) => {
+    if (t === COMMAND_TOKEN) return { raw: t, kind: 'command' }
+    if (WRAPPER_TOKENS.has(t.toLowerCase())) return { raw: t, kind: 'wrapper' }
+    if (/^[A-Z_][A-Z0-9_]+=/.test(t)) return { raw: t, kind: 'env' }
+    if (GAMESCOPE_FLAGS.test(t)) return { raw: t, kind: 'gamescope' }
+    return { raw: t, kind: 'other' }
+  })
+}
+
+// ── Token-level diff for dirty preview ──────────────────────────────────────
+
+export type DiffToken = { raw: string; status: 'same' | 'added' | 'removed'; kind: TokenKind }
+
+/** Produce a token-level diff between two raw launch option strings.
+ *  Uses a simple LCS-based diffing over the token arrays. */
+export function diffTokens(before: string, after: string): DiffToken[] {
+  const bTokens = tokenize(before)
+  const aTokens = tokenize(after)
+  if (!bTokens.length && !aTokens.length) return []
+
+  const bRaw = bTokens.map((t) => t.raw)
+  const aRaw = aTokens.map((t) => t.raw)
+
+  // LCS table
+  const m = bRaw.length
+  const n = aRaw.length
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      dp[i][j] = bRaw[i] === aRaw[j] ? 1 + dp[i + 1][j + 1] : Math.max(dp[i + 1][j], dp[i][j + 1])
+    }
+  }
+
+  // Backtrack
+  const result: DiffToken[] = []
+  let i = 0, j = 0
+  while (i < m || j < n) {
+    if (i < m && j < n && bRaw[i] === aRaw[j]) {
+      result.push({ raw: bRaw[i], status: 'same', kind: bTokens[i].kind })
+      i++; j++
+    } else if (j < n && (i >= m || dp[i][j + 1] >= dp[i + 1][j])) {
+      result.push({ raw: aRaw[j], status: 'added', kind: aTokens[j].kind })
+      j++
+    } else {
+      result.push({ raw: bRaw[i], status: 'removed', kind: bTokens[i].kind })
+      i++
+    }
+  }
+  return result
 }
 
 // ── Transform (6 batch ops) ────────────────────────────────────────────────
