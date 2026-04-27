@@ -136,6 +136,8 @@ Artifacts land in `app/dist/` (for example `*.AppImage`, `*.pkg.tar.zst`, `lates
 | **AppImage license file** | Paths are resolved from `app/` and `app/resources/`. The MIT `LICENSE` at the **repository root** is referenced as `../LICENSE` from `app/electron-builder.yml`. |
 | **Pacman / FPM** | FPM-based targets need a project **homepage**, **author** with an **email**, and a Linux **maintainer**. The YAML sets these via `extraMetadata` and `linux.maintainer`; replace the GitHub `users.noreply.github.com` placeholder with a real address if you prefer. |
 
+**Ubuntu/CI**: the pacman step invokes `bsdtar` (for `.MTREE`). Install **`libarchive-tools`** so `bsdtar` is on `PATH` — the Release Electron workflow already includes it.
+
 ### Tests
 
 In your dev venv (not required for the packaged app):
