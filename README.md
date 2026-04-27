@@ -6,7 +6,7 @@
 
 ## Install (Electron — **pacman only**)
 
-Supported path today: **Arch / CachyOS** (or any system with **`pacman`** and **`sudo`**). Installs the **`SteamToolsCachyOS-Linux-x86_64.pacman`** from the [latest GitHub release](https://github.com/Mindsaver/SteamToolsCachyOS/releases/latest) under **`/opt`**, same layout as **in-app updates**.
+Supported path today: **Arch / CachyOS** (or any system with `**pacman`** and `**sudo**`). Installs the `**SteamToolsCachyOS-Linux-x86_64.pacman**` from the [latest GitHub release](https://github.com/Mindsaver/SteamToolsCachyOS/releases/latest) under `**/opt**`, same layout as **in-app updates**.
 
 **One-liner** (needs **curl**, **python3**, **pacman**, **sudo** unless you run the pipe as root):
 
@@ -16,15 +16,15 @@ curl -fsSL -H "Accept: application/vnd.github.v3.raw" \
   | bash
 ```
 
-**Or manually:** download **`SteamToolsCachyOS-Linux-x86_64.pacman`** from Releases, then:
+**Or manually:** download `**SteamToolsCachyOS-Linux-x86_64.pacman`** from Releases, then:
 
 ```bash
 sudo pacman -U ./SteamToolsCachyOS-Linux-x86_64.pacman
 ```
 
-`raw.githubusercontent.com/.../main/...` is often **CDN-cached**; the **Contents API** URL above tracks `main` immediately. For a **fork**, change `Mindsaver/SteamToolsCachyOS` in the URL or set **`STEAMTOOLS_INSTALL_REPO=owner/repo`** before piping (the in-app updater can use **`STEAMTOOLS_UPDATE_REPO`** the same way).
+`raw.githubusercontent.com/.../main/...` is often **CDN-cached**; the **Contents API** URL above tracks `main` immediately. For a **fork**, change `Mindsaver/SteamToolsCachyOS` in the URL or set `**STEAMTOOLS_INSTALL_REPO=owner/repo`** before piping (the in-app updater can use `**STEAMTOOLS_UPDATE_REPO**` the same way).
 
-**Older PyInstaller zip** builds may still appear on Releases for legacy use; unpack and run **`install.sh`** if you need that stack only — not the same install tree as the Electron app above.
+**Older PyInstaller zip** builds may still appear on Releases for legacy use; unpack and run `**install.sh`** if you need that stack only — not the same install tree as the Electron app above.
 
 ---
 
@@ -36,23 +36,23 @@ sudo pacman -U ./SteamToolsCachyOS-Linux-x86_64.pacman
 sudo pacman -Rns steamtoolscachyos
 ```
 
-Use the exact name from **`pacman -Qs steamtools`** if it differs.
+Use the exact name from `**pacman -Qs steamtools**` if it differs.
 
-**Legacy PyInstaller zip** (if you used **`~/.local/share/SteamToolsCachyOS`** from **`install.sh`**):
+**Legacy PyInstaller zip** (if you used `**~/.local/share/SteamToolsCachyOS`** from `**install.sh**`):
 
 ```bash
 bash ~/.local/share/SteamToolsCachyOS/uninstall.sh
 ```
 
-(or **`./uninstall.sh`** next to **`install.sh`** in an unpacked bundle). That removes the menu entry, **`~/.local/bin/SteamToolsCachyOS`**, and **`~/.local/share/SteamToolsCachyOS`**, including old **Symlink-Steam** paths when still present.
+(or `**./uninstall.sh**` next to `**install.sh**` in an unpacked bundle). That removes the menu entry, `**~/.local/bin/SteamToolsCachyOS**`, and `**~/.local/share/SteamToolsCachyOS**`, including old **Symlink-Steam** paths when still present.
 
 ---
 
 ## Updates and autoupdate
 
-- **Menu**: **Help → Check for updates…** uses **electron-updater** with the **`.pacman`** asset on GitHub Releases (same as install). After download, **Restart & install** runs **`pacman -U`** on the new package.
-- **Automatic check** on startup respects app settings (throttle, etc.); env overrides like **`STEAMTOOLS_NO_AUTO_UPDATE=1`** still apply if set.
-- **Outside the app**: re-run the [install one-liner](#install-electron--pacman-only) or **`sudo pacman -U`** on a newer **`.pacman`** from Releases.
+- **Menu**: **Help → Check for updates…** uses **electron-updater** with the `**.pacman`** asset on GitHub Releases (same as install). After download, **Restart & install** runs `**pacman -U`** on the new package.
+- **Automatic check** on startup respects app settings (throttle, etc.); env overrides like `**STEAMTOOLS_NO_AUTO_UPDATE=1`** still apply if set.
+- **Outside the app**: re-run the [install one-liner](#install-electron--pacman-only) or `**sudo pacman -U`** on a newer `**.pacman**` from Releases.
 
 ---
 
@@ -118,7 +118,7 @@ Maintainers can still publish manually: build locally, zip `dist/`, attach `**St
 
 ### Electron app and electron-builder 26 (Linux)
 
-The Electron UI lives under `[app/](app/)`. CI builds **AppImage** and **pacman** via `[.github/workflows/release-electron.yml](.github/workflows/release-electron.yml)` (`working-directory: app`, then `npx electron-builder --linux AppImage pacman --publish never`). **End-user install** is the **`.pacman`** path documented above; AppImage is still built for portability testing if needed.
+The Electron UI lives under `[app/](app/)`. CI builds **pacman** via `[.github/workflows/release-electron.yml](.github/workflows/release-electron.yml)` (`working-directory: app`, then `npx electron-builder --linux pacman --publish never`). **End-user install** is the `**.pacman`** path documented above.
 
 **Local packaging** (from repo root):
 
@@ -126,20 +126,19 @@ The Electron UI lives under `[app/](app/)`. CI builds **AppImage** and **pacman*
 cd app
 npm ci
 npm run build
-npx electron-builder --linux AppImage pacman --publish never
+npx electron-builder --linux pacman --publish never
 ```
 
-Artifacts land in `app/dist/` (for example `*.AppImage`, `*.pacman`, `latest-linux.yml` for electron-updater).
+Artifacts land in `app/dist/` (for example `*.pacman`, `latest-linux.yml` for electron-updater).
 
 **electron-builder 26.x** validates `[app/electron-builder.yml](app/electron-builder.yml)` against a strict schema. If you edit that file, keep the following in mind:
 
 
-| Topic                     | What to use                                                                                                                                                                                                                                                                            |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Linux targets**         | Put targets under `linux.target`, not a root-level `targets` key. See [Linux configuration](https://www.electron.build/linux).                                                                                                                                                         |
-| `**.desktop` metadata**   | Custom `[Desktop Entry]` keys (`Name`, `Comment`, `Categories`, `Keywords`, …) belong under `linux.desktop.entry`. The `linux.desktop` object only allows `entry` and `desktopActions`. See [LinuxDesktopFile](https://www.electron.build/app-builder-lib.interface.linuxdesktopfile). |
-| **AppImage license file** | Paths are resolved from `app/` and `app/resources/`. The MIT `LICENSE` at the **repository root** is referenced as `../LICENSE` from `app/electron-builder.yml`.                                                                                                                       |
-| **Pacman / FPM**          | FPM-based targets need a project **homepage**, **author** with an **email**, and a Linux **maintainer**. The YAML sets these via `extraMetadata` and `linux.maintainer`; replace the GitHub `users.noreply.github.com` placeholder with a real address if you prefer.                  |
+| Topic                   | What to use                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Linux targets**       | Put targets under `linux.target`, not a root-level `targets` key. See [Linux configuration](https://www.electron.build/linux).                                                                                                                                                                                                                |
+| `**.desktop` metadata** | Custom `[Desktop Entry]` keys (`Name`, `Comment`, `Categories`, `Keywords`, …) belong under `linux.desktop.entry`. The `linux.desktop` object only allows `entry` and `desktopActions`. See [LinuxDesktopFile](https://www.electron.build/app-builder-lib.interface.linuxdesktopfile).                                                        |
+| **Pacman / FPM**        | FPM-based targets need a project **homepage**, **author** with an **email**, and a Linux **maintainer**. The YAML sets these via `extraMetadata` and `linux.maintainer`; replace the GitHub `users.noreply.github.com` placeholder with a real address if you prefer. Package **license** comes from `app/package.json` (`"license": "MIT"`). |
 
 
 **Ubuntu/CI**: the pacman step invokes `bsdtar` (for `.MTREE`). Install `**libarchive-tools`** so `bsdtar` is on `PATH` — the Release Electron workflow already includes it.
@@ -177,3 +176,4 @@ Bundled and runtime dependencies (for example **PySide6** / Qt, **certifi**, **p
 ## Links
 
 - **GitHub**: [Mindsaver/SteamToolsCachyOS](https://github.com/Mindsaver/SteamToolsCachyOS)
+

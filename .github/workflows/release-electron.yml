@@ -1,4 +1,4 @@
-# Build Electron AppImage + pacman from tag or manual dispatch and upload to GitHub Releases.
+# Build Electron pacman package from tag or manual dispatch and upload to GitHub Releases.
 # Generates latest-linux.yml so electron-updater auto-update works.
 name: Release Electron
 
@@ -95,27 +95,26 @@ jobs:
         working-directory: app
         run: npm test
 
-      - name: Package AppImage + pacman
+      - name: Package pacman
         working-directory: app
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npx electron-builder --linux AppImage pacman --publish never
+          npx electron-builder --linux pacman --publish never
 
       - name: List dist artifacts
         run: ls -la app/dist/
 
       # Creates the Git tag via API when tag_name is set — no separate git push needed.
-      - name: Upload AppImage
+      - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.TAG }}
           prerelease: ${{ inputs.prerelease || false }}
           draft: ${{ inputs.draft || false }}
           generate_release_notes: true
-          # electron-builder names pacman output *.pacman (not *.pkg.tar.zst). latest-linux.yml lists both AppImage + pacman for electron-updater.
+          # electron-builder names pacman output *.pacman (not *.pkg.tar.zst).
           files: |
-            app/dist/*.AppImage
             app/dist/*.pacman
             app/dist/latest-linux.yml

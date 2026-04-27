@@ -12,7 +12,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "package": "npm run build && electron-builder",
-    "package:linux": "npm run build && electron-builder --linux AppImage pacman",
+    "package:linux": "npm run build && electron-builder --linux pacman",
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write src tests",
     "test": "vitest run",
