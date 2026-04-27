@@ -66,6 +66,12 @@ body {
   user-select: none;
 }
 
+/* Native select dropdown rows (Electron/Chromium) — align with dark tokens when OS ignores inherited color. */
+select option {
+  background-color: var(--color-card);
+  color: var(--color-foreground);
+}
+
 p, span, pre, code, input, textarea, [data-selectable] {
   user-select: text;
 }

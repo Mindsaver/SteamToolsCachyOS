@@ -53,12 +53,14 @@ Implemented in the Electron app under `[app/](app)`:
 - **Game symlink hub** — per-game folders under `~/SteamToolsCachyOS/<Game Name>/` (or `STEAMGAME_ROOT`) with links to install dir, Proton prefix, `system32`, userdata; optional “Start in Steam” desktop entries and FSR-related DLL workflows.
 - **FSR DLL helper** — locate and align AMD FFX stack DLLs with heuristics from PE bytes.
 - **Launch options** — structured presets, compatibility-tool context from Steam config, and awareness of Proton `user_settings.py` when present.
+- **Compatibility tools** — download **GE-Proton** ([GloriousEggroll/proton-ge-custom](https://github.com/GloriousEggroll/proton-ge-custom)) or **Proton-CachyOS** ([CachyOS/proton-cachyos](https://github.com/CachyOS/proton-cachyos)) into Steam’s `compatibilitytools.d`, optional **auto update** (throttled GitHub checks in the main process shortly after app startup — works no matter which page you are on), optional **silent auto-install** (Settings), open tool folders or `user_settings.py`. After installing a new build, **restart Steam** so it rescans tools. **`x86_64_v4`** CachyOS archives are experimental; prefer **`x86_64`** unless you know you want v4.
 
 ---
 
 ## Requirements
 
 - **Linux** with **Steam** installed. If autodetection fails, set `STEAM_CLIENT` to your Steam root where the app expects it (see in-app behavior and `[app/src/main](app/src/main)` services).
+- Optional: set **`STEAMTOOLS_GITHUB_TOKEN`** (a GitHub personal access token with `public_repo` or read-only scope is enough) if you hit unauthenticated **GitHub API rate limits** when refreshing compatibility-tool release lists.
 
 ---
 

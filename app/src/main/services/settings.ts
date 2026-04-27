@@ -12,6 +12,16 @@ const DEFAULTS: AppSettings = {
   autoUpdate: process.env.STEAMTOOLS_NO_AUTO_UPDATE !== '1',
   autoUpdateThrottleHours: parseFloat(process.env.STEAMTOOLS_AUTO_CHECK_INTERVAL_HOURS || '1'),
   theme: 'dark',
+  geProtonTrack: 'none',
+  protonCachyosTrack: 'none',
+  protonCachyosSlrOnly: true,
+  protonCachyosArch: 'x86_64',
+  compatToolsCheckThrottleHours: 24,
+  compatToolsSilentAutoInstall: false,
+  compatGeLastCheckEpoch: 0,
+  compatGeLastRemoteTag: null,
+  compatCachyosLastCheckEpoch: 0,
+  compatCachyosLastRemoteTag: null,
 }
 
 export function loadSettings(): AppSettings {

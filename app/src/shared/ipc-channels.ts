@@ -58,6 +58,15 @@ export const IPC = {
   DIALOG_OPEN_DIR: 'dialog:open-dir',
   SHELL_OPEN_PATH: 'shell:open-path',
   SHELL_OPEN_EXTERNAL: 'shell:open-external',
+
+  // Compatibility tools (GE-Proton / Proton-CachyOS)
+  COMPAT_TOOLS_LIST_INSTALLED: 'compat-tools:list-installed',
+  COMPAT_TOOLS_LIST_RELEASES: 'compat-tools:list-releases',
+  COMPAT_TOOLS_INSTALL: 'compat-tools:install',
+  COMPAT_TOOLS_CHECK_UPDATE: 'compat-tools:check-update',
+  COMPAT_TOOLS_PROGRESS: 'compat-tools:progress',
+  COMPAT_TOOLS_UPDATE_AVAILABLE: 'compat-tools:update-available',
+  COMPAT_TOOLS_OPEN_USER_SETTINGS: 'compat-tools:open-user-settings',
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

@@ -14,6 +14,12 @@ import type {
   SymlinkHubOptions,
   SteamAccount, BatchTransformPreviewRequest, BatchTransformApplyRequest,
   BatchTransformResult, RestoreBackupResult,
+  CompatProviderId,
+  CompatGithubReleaseRow,
+  InstalledCompatToolRow,
+  CompatInstallProgress,
+  CompatUpdateCheckResult,
+  CompatToolsUpdateAvailablePayload,
 } from '../shared/types'
 import { transformLaunchOptions } from '../shared/launchOptions/compose'
 import {
@@ -69,6 +75,8 @@ function makeVoidListeners() {
 }
 const updateNotAvailCh = makeVoidListeners()
 const updateErrCh = makeChannel<(i: { message: string }) => void>()
+const compatProgCh = makeChannel<(p: CompatInstallProgress) => void>()
+const compatAvailCh = makeChannel<(p: CompatToolsUpdateAvailablePayload) => void>()
 
 export const mockApi = {
   __simMode: true as const,
@@ -157,6 +165,66 @@ export const mockApi = {
     }
     return {}
   },
+
+  // ── Compatibility tools ───────────────────────────────────────────────────
+  listCompatToolsInstalled: async (): Promise<InstalledCompatToolRow[]> => {
+    await delay(120)
+    return [
+      {
+        dirName: 'GE-Proton10-34',
+        installPath: '/home/arch/.local/share/Steam/compatibilitytools.d/GE-Proton10-34',
+        internalName: 'GE-Proton10-34',
+        displayName: 'GE-Proton10-34',
+        provider: 'ge_proton',
+      },
+      {
+        dirName: 'Proton-CachyOS Latest',
+        installPath: '/home/arch/.local/share/Steam/compatibilitytools.d/Proton-CachyOS Latest',
+        internalName: 'Proton-CachyOS Latest',
+        displayName: 'Proton-CachyOS Latest',
+        provider: 'proton_cachyos',
+      },
+    ]
+  },
+  listCompatReleases: async ({
+    provider,
+  }: {
+    provider: CompatProviderId
+    slrOnly?: boolean
+  }): Promise<CompatGithubReleaseRow[]> => {
+    await delay(200)
+    if (provider === 'ge_proton') {
+      return [
+        { tag_name: 'GE-Proton10-34', published_at: '2026-01-01T00:00:00Z' },
+        { tag_name: 'GE-Proton10-33', published_at: '2025-12-01T00:00:00Z' },
+      ]
+    }
+    return [{ tag_name: 'cachyos-10.0-20260420-slr', published_at: '2026-04-21T00:00:00Z' }]
+  },
+  checkCompatToolsUpdate: async (provider: CompatProviderId): Promise<CompatUpdateCheckResult> => {
+    await delay(150)
+    return {
+      provider,
+      hasUpdate: false,
+      remoteTag: provider === 'ge_proton' ? 'GE-Proton10-34' : 'cachyos-10.0-20260420-slr',
+      installedBestTag: 'GE-Proton10-34',
+      releaseUrl: 'https://github.com/',
+    }
+  },
+  installCompatRelease: async (_req: {
+    provider: CompatProviderId
+    tag: string
+    cachyosArch?: 'x86_64' | 'x86_64_v4'
+  }) => {
+    await delay(200)
+    compatProgCh.emit({ type: 'log', message: 'Simulated download…' })
+    compatProgCh.emit({ type: 'progress', message: 'Downloading…', current: 5, total: 10 })
+    compatProgCh.emit({ type: 'done', message: 'Simulated install done' })
+    return { ok: true as const }
+  },
+  openCompatUserSettings: async () => ({ ok: true as const }),
+  onCompatToolsProgress: compatProgCh.on,
+  onCompatToolsUpdateAvailable: compatAvailCh.on,
 
   // ── Settings ───────────────────────────────────────────────────────────────
   getSettings: async (): Promise<AppSettings> => { await delay(80); return { ...simSettings } },

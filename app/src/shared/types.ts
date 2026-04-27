@@ -121,6 +121,13 @@ export interface UpdateInfo {
   releaseUrl: string | null
 }
 
+export type CompatProviderId = 'ge_proton' | 'proton_cachyos'
+
+/** `none` = off. `latest` = auto update on (stored value name kept for existing settings files). */
+export type CompatTrackMode = 'none' | 'latest'
+
+export type CachyosArchChoice = 'x86_64' | 'x86_64_v4'
+
 export interface AppSettings {
   steamPath: string | null
   hubRoot: string | null
@@ -128,6 +135,21 @@ export interface AppSettings {
   autoUpdate: boolean
   autoUpdateThrottleHours: number
   theme: 'dark' | 'light' | 'system'
+  /** Auto update GE-Proton from GitHub (throttled background check on app startup; any page). */
+  geProtonTrack: CompatTrackMode
+  /** Auto update Proton-CachyOS from GitHub (same; respects SLR/arch filters below). */
+  protonCachyosTrack: CompatTrackMode
+  /** Prefer SLR-tagged CachyOS releases (`-slr` in tag). */
+  protonCachyosSlrOnly: boolean
+  protonCachyosArch: CachyosArchChoice
+  /** Hours between automatic compat-tool update checks (GitHub). */
+  compatToolsCheckThrottleHours: number
+  /** When true and auto update is on, download+install without prompting (use with care). */
+  compatToolsSilentAutoInstall: boolean
+  compatGeLastCheckEpoch: number
+  compatGeLastRemoteTag: string | null
+  compatCachyosLastCheckEpoch: number
+  compatCachyosLastRemoteTag: string | null
 }
 
 export type CompatSelectionKind = 'steam_default' | 'override' | 'native'
@@ -150,4 +172,39 @@ export interface SteamCompatSnapshot {
     toolDescription: string | null
   }
   perApp: Record<string, CompatToolInfo>
+}
+
+export interface CompatInstallProgress {
+  type: 'log' | 'progress' | 'done' | 'error'
+  message: string
+  current?: number
+  total?: number
+}
+
+export interface InstalledCompatToolRow {
+  dirName: string
+  installPath: string
+  internalName: string
+  displayName: string
+  provider: CompatProviderId | 'other'
+}
+
+export interface CompatGithubReleaseRow {
+  tag_name: string
+  published_at: string
+}
+
+export interface CompatUpdateCheckResult {
+  provider: CompatProviderId
+  hasUpdate: boolean
+  remoteTag: string | null
+  installedBestTag: string | null
+  releaseUrl: string | null
+}
+
+export interface CompatToolsUpdateAvailablePayload {
+  provider: CompatProviderId
+  remoteTag: string
+  installedBestTag: string | null
+  releaseUrl: string | null
 }

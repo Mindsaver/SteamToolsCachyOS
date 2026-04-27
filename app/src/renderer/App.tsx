@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { Routes, Route, NavLink } from 'react-router-dom'
-import { LayoutDashboard, FolderSymlink, Cpu, Gamepad2, Settings as SettingsIcon } from 'lucide-react'
-import { Toaster } from 'sonner'
+import { Routes, Route, NavLink, useNavigate } from 'react-router-dom'
+import { LayoutDashboard, FolderSymlink, Cpu, Gamepad2, Settings as SettingsIcon, Package } from 'lucide-react'
+import { Toaster, toast } from 'sonner'
 import { cn } from './lib/utils'
 import { UpdateBanner } from './components/UpdateBanner'
 import { SimBanner } from './components/SimBanner'
@@ -9,6 +9,7 @@ import { Dashboard } from './routes/Dashboard'
 import { SymlinkHub } from './routes/SymlinkHub'
 import { FsrDll } from './routes/FsrDll'
 import { LaunchOptions } from './routes/LaunchOptions'
+import { CompatTools } from './routes/CompatTools'
 import { Settings } from './routes/Settings'
 import { AboutDialog } from './components/AboutDialog'
 import { api } from './lib/ipc'
@@ -22,15 +23,30 @@ const NAV_ITEMS = [
   { to: '/symlink', label: 'Symlink Hub', icon: FolderSymlink },
   { to: '/fsr', label: 'FSR DLL', icon: Cpu },
   { to: '/launch-options', label: 'Launch Options', icon: Gamepad2 },
+  { to: '/compat-tools', label: 'Compat tools', icon: Package },
 ]
 
 export default function App() {
+  const navigate = useNavigate()
   const [aboutOpen, setAboutOpen] = useState(false)
   const [appVersion, setAppVersion] = useState<string | null>(null)
 
   useEffect(() => {
     return api.onShowAbout(() => setAboutOpen(true))
   }, [])
+
+  useEffect(() => {
+    return api.onCompatToolsUpdateAvailable((p) => {
+      const label = p.provider === 'ge_proton' ? 'GE-Proton' : 'Proton-CachyOS'
+      toast.message(`${label}: auto update — newer build available`, {
+        description: p.remoteTag,
+        action: {
+          label: 'Open compat tools',
+          onClick: () => navigate('/compat-tools'),
+        },
+      })
+    })
+  }, [navigate])
 
   useEffect(() => {
     void api.getAboutInfo().then((i) => setAppVersion(i.version))
@@ -124,6 +140,7 @@ export default function App() {
             <Route path="/symlink" element={<SymlinkHub />} />
             <Route path="/fsr" element={<FsrDll />} />
             <Route path="/launch-options" element={<LaunchOptions />} />
+            <Route path="/compat-tools" element={<CompatTools />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>

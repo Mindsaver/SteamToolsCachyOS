@@ -16,6 +16,16 @@ const DEFAULTS: AppSettings = {
   autoUpdate: true,
   autoUpdateThrottleHours: 1,
   theme: 'dark',
+  geProtonTrack: 'none',
+  protonCachyosTrack: 'none',
+  protonCachyosSlrOnly: true,
+  protonCachyosArch: 'x86_64',
+  compatToolsCheckThrottleHours: 24,
+  compatToolsSilentAutoInstall: false,
+  compatGeLastCheckEpoch: 0,
+  compatGeLastRemoteTag: null,
+  compatCachyosLastCheckEpoch: 0,
+  compatCachyosLastRemoteTag: null,
 }
 
 export function Settings() {
@@ -25,7 +35,7 @@ export function Settings() {
   const [appVersion, setAppVersion] = useState<string | null>(null)
 
   useEffect(() => {
-    api.getSettings().then(setSettings)
+    api.getSettings().then((s) => setSettings({ ...DEFAULTS, ...s }))
     void api.getAboutInfo().then((i) => setAppVersion(i.version))
   }, [])
 
@@ -189,6 +199,46 @@ export function Settings() {
           <Button variant="outline" size="sm" onClick={handleCheckUpdate} disabled={checking}>
             {checking ? 'Checking…' : 'Check for updates now'}
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* Compatibility tools auto-check */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Compatibility tools (GitHub)</CardTitle>
+          <CardDescription>
+            Throttle applies when <strong>auto update</strong> is enabled for GE-Proton or Proton-CachyOS (runs in the background on startup; any page).
+            Optional env <code className="text-xs bg-muted px-1 py-0.5 rounded">STEAMTOOLS_GITHUB_TOKEN</code>{' '}
+            raises GitHub API limits.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <p className="text-sm font-medium">Compat check interval (hours)</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Minimum 0.25 (15 min)</p>
+            </div>
+            <Input
+              type="number"
+              min={0.25}
+              step={0.5}
+              value={settings.compatToolsCheckThrottleHours}
+              onChange={(e) => update('compatToolsCheckThrottleHours', parseFloat(e.target.value) || 24)}
+              className="w-24 text-right"
+            />
+          </div>
+          <label className="flex items-center justify-between gap-4 cursor-pointer select-none">
+            <div>
+              <p className="text-sm font-medium">Silent auto-install when update found</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Downloads and extracts without a toast prompt. Use only if you accept large background downloads.
+              </p>
+            </div>
+            <Switch
+              checked={settings.compatToolsSilentAutoInstall}
+              onCheckedChange={(v) => update('compatToolsSilentAutoInstall', v)}
+            />
+          </label>
         </CardContent>
       </Card>
 

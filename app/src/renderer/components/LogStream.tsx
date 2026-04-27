@@ -1,9 +1,14 @@
 import React, { useEffect, useRef } from 'react'
 import { cn } from '../lib/utils'
-import type { SymlinkProgress } from '../../shared/types'
+export interface LogStreamLine {
+  type: 'log' | 'progress' | 'done' | 'error'
+  message: string
+  current?: number
+  total?: number
+}
 
 interface LogStreamProps {
-  lines: SymlinkProgress[]
+  lines: LogStreamLine[]
   className?: string
 }
 

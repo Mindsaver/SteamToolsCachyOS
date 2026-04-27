@@ -195,6 +195,16 @@ export const MOCK_SETTINGS: AppSettings = {
   autoUpdate: true,
   autoUpdateThrottleHours: 1,
   theme: 'dark',
+  geProtonTrack: 'none',
+  protonCachyosTrack: 'none',
+  protonCachyosSlrOnly: true,
+  protonCachyosArch: 'x86_64',
+  compatToolsCheckThrottleHours: 24,
+  compatToolsSilentAutoInstall: false,
+  compatGeLastCheckEpoch: 0,
+  compatGeLastRemoteTag: null,
+  compatCachyosLastCheckEpoch: 0,
+  compatCachyosLastRemoteTag: null,
 }
 
 /** Simulated Steam Play default (CompatToolMapping "0"). */

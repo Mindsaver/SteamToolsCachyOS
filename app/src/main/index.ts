@@ -3,6 +3,7 @@ import path from 'path'
 import { registerIpcHandlers } from './ipc'
 import { initUpdater, checkForUpdates } from './services/updater'
 import { loadSettings } from './services/settings'
+import { runCompatToolsAutoCheck } from './services/steam/compatToolsAuto'
 import { ensureDesktopEntry } from './services/desktopEntry'
 import { IPC } from '../shared/ipc-channels'
 
@@ -114,6 +115,9 @@ app.whenReady().then(() => {
   if (settings.autoUpdate) {
     setTimeout(() => checkForUpdates(), 3000)
   }
+  setTimeout(() => {
+    void runCompatToolsAutoCheck(mainWindow)
+  }, 5000)
 
   app.on('second-instance', () => {
     if (mainWindow) {

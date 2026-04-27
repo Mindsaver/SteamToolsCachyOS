@@ -1,6 +1,6 @@
 import { app, ipcMain, dialog, shell, BrowserWindow } from 'electron'
+import fs from 'fs'
 import path from 'path'
-import os from 'os'
 import { IPC } from '../shared/ipc-channels'
 import { resolveSteamInstall, parseLibraryPaths, resolveUserDataPath, listSteamAccounts } from './services/steam/install'
 import { collectGames } from './services/steam/manifests'
@@ -11,7 +11,25 @@ import {
 } from './services/steam/localconfig'
 import { isSteamRunning, closeSteam } from './services/steam/processes'
 import { loadCompatMappings, getCompatInfo, getSteamPlayDefault } from './services/steam/compat'
-import { getGlobalEnvOverridesForApp } from './services/steam/userSettings'
+import { getGlobalEnvOverridesForApp, resolveToolInstallDir } from './services/steam/userSettings'
+import {
+  getInstalledCompatRows,
+  listGeReleasesForUi,
+  listCachyosReleasesForUi,
+  installCompatRelease,
+  checkGeProtonUpdate,
+  checkCachyosUpdate,
+} from './services/steam/compatInstall'
+import type {
+  CompatProviderId,
+  CompatGithubReleaseRow,
+  AppAboutInfo,
+  AppSettings,
+  SteamCompatSnapshot,
+  SymlinkHubOptions,
+  BatchTransformPreviewRequest,
+  BatchTransformApplyRequest,
+} from '../shared/types'
 import { runSymlinkHub } from './services/symlink/hub'
 import { analyzeDll } from './services/fsr/ffx'
 import { copyDllToGames } from './services/fsr/copy'
@@ -19,14 +37,6 @@ import { detectGpuVendors } from './services/gpu/detect'
 import { transformLaunchOptions } from '../shared/launchOptions/compose'
 import { loadSettings, saveSettings } from './services/settings'
 import { checkForUpdates, downloadUpdate, installUpdate } from './services/updater'
-import type {
-  AppAboutInfo,
-  SteamCompatSnapshot,
-  SymlinkHubOptions,
-  BatchTransformPreviewRequest,
-  BatchTransformApplyRequest,
-} from '../shared/types'
-
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // ── Steam ──────────────────────────────────────────────────────────────────
 
@@ -273,11 +283,88 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getGlobalEnvOverridesForApp(installPath, appId)
   })
 
+  // ── Compatibility tools (GE-Proton / Proton-CachyOS) ───────────────────────
+
+  ipcMain.handle(IPC.COMPAT_TOOLS_LIST_INSTALLED, async () => {
+    const settings = loadSettings()
+    const installPath = settings.steamPath || resolveSteamInstall()
+    if (!installPath) return []
+    return getInstalledCompatRows(installPath)
+  })
+
+  ipcMain.handle(
+    IPC.COMPAT_TOOLS_LIST_RELEASES,
+    async (_e, payload: { provider: CompatProviderId; slrOnly?: boolean }) => {
+      const settings = loadSettings()
+      const rows: CompatGithubReleaseRow[] = []
+      if (payload.provider === 'ge_proton') {
+        const rel = await listGeReleasesForUi()
+        for (const r of rel) rows.push({ tag_name: r.tag_name, published_at: r.published_at })
+      } else {
+        const slrOnly = payload.slrOnly ?? settings.protonCachyosSlrOnly
+        const rel = await listCachyosReleasesForUi(slrOnly)
+        for (const r of rel) rows.push({ tag_name: r.tag_name, published_at: r.published_at })
+      }
+      return rows
+    }
+  )
+
+  ipcMain.handle(IPC.COMPAT_TOOLS_CHECK_UPDATE, async (_e, payload: { provider: CompatProviderId }) => {
+    const settings = loadSettings()
+    const installPath = settings.steamPath || resolveSteamInstall()
+    if (!installPath) {
+      return {
+        provider: payload.provider,
+        hasUpdate: false,
+        remoteTag: null,
+        installedBestTag: null,
+        releaseUrl: null,
+      }
+    }
+    if (payload.provider === 'ge_proton') return checkGeProtonUpdate(installPath)
+    return checkCachyosUpdate(
+      installPath,
+      settings.protonCachyosSlrOnly,
+      settings.protonCachyosArch
+    )
+  })
+
+  ipcMain.handle(
+    IPC.COMPAT_TOOLS_INSTALL,
+    async (
+      _e,
+      payload: { provider: CompatProviderId; tag: string; cachyosArch?: 'x86_64' | 'x86_64_v4' }
+    ) => {
+      const settings = loadSettings()
+      const installPath = settings.steamPath || resolveSteamInstall()
+      if (!installPath) return { ok: false, error: 'Steam not found' }
+      const arch = payload.cachyosArch ?? settings.protonCachyosArch
+      return installCompatRelease({
+        provider: payload.provider,
+        tag: payload.tag,
+        steamInstall: installPath,
+        cachyosArch: arch,
+        onProgress: (p) => mainWindow.webContents.send(IPC.COMPAT_TOOLS_PROGRESS, p),
+      })
+    }
+  )
+
+  ipcMain.handle(IPC.COMPAT_TOOLS_OPEN_USER_SETTINGS, async (_e, internalName: string) => {
+    const settings = loadSettings()
+    const installPath = settings.steamPath || resolveSteamInstall()
+    if (!installPath) return { ok: false, error: 'Steam not found' }
+    const dir = resolveToolInstallDir(installPath, internalName)
+    if (!dir) return { ok: false, error: 'Tool not found' }
+    const p = path.join(dir, 'user_settings.py')
+    await shell.openPath(fs.existsSync(p) ? p : dir)
+    return { ok: true }
+  })
+
   // ── Settings ───────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC.SETTINGS_GET, () => loadSettings())
-  ipcMain.handle(IPC.SETTINGS_SET, (_e, settings) => {
-    saveSettings(settings)
+  ipcMain.handle(IPC.SETTINGS_SET, (_e, settings: Partial<AppSettings> & Record<string, unknown>) => {
+    saveSettings({ ...loadSettings(), ...settings } as AppSettings)
     return { ok: true }
   })
 

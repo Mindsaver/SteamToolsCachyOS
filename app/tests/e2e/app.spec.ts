@@ -34,6 +34,7 @@ test.describe('SteamToolsCachyOS smoke test', () => {
     await expect(window.getByText('Symlink Hub')).toBeVisible()
     await expect(window.getByText('FSR DLL')).toBeVisible()
     await expect(window.getByText('Launch Options')).toBeVisible()
+    await expect(window.getByText('Compat tools')).toBeVisible()
 
     await app.close()
   })

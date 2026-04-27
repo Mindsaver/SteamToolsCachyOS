@@ -12,6 +12,12 @@ import type {
   BatchTransformApplyRequest,
   BatchTransformResult,
   RestoreBackupResult,
+  CompatProviderId,
+  CompatGithubReleaseRow,
+  InstalledCompatToolRow,
+  CompatUpdateCheckResult,
+  CompatInstallProgress,
+  CompatToolsUpdateAvailablePayload,
 } from '../shared/types'
 
 // VITE_SIM is replaced at build time by electron-vite define.
@@ -64,6 +70,31 @@ const realApi = {
     ipcRenderer.invoke(IPC.COMPAT_SNAPSHOT, appIds),
   getGlobalEnvOverrides: (appId: number): Promise<Record<string, string>> =>
     ipcRenderer.invoke(IPC.STEAM_GET_GLOBAL_ENV, appId),
+
+  listCompatToolsInstalled: (): Promise<InstalledCompatToolRow[]> =>
+    ipcRenderer.invoke(IPC.COMPAT_TOOLS_LIST_INSTALLED),
+  listCompatReleases: (req: { provider: CompatProviderId; slrOnly?: boolean }): Promise<
+    CompatGithubReleaseRow[]
+  > => ipcRenderer.invoke(IPC.COMPAT_TOOLS_LIST_RELEASES, req),
+  checkCompatToolsUpdate: (provider: CompatProviderId): Promise<CompatUpdateCheckResult> =>
+    ipcRenderer.invoke(IPC.COMPAT_TOOLS_CHECK_UPDATE, { provider }),
+  installCompatRelease: (req: {
+    provider: CompatProviderId
+    tag: string
+    cachyosArch?: 'x86_64' | 'x86_64_v4'
+  }) => ipcRenderer.invoke(IPC.COMPAT_TOOLS_INSTALL, req),
+  openCompatUserSettings: (internalName: string) =>
+    ipcRenderer.invoke(IPC.COMPAT_TOOLS_OPEN_USER_SETTINGS, internalName),
+  onCompatToolsProgress: (cb: (p: CompatInstallProgress) => void) => {
+    const handler = (_: unknown, p: CompatInstallProgress) => cb(p)
+    ipcRenderer.on(IPC.COMPAT_TOOLS_PROGRESS, handler)
+    return () => ipcRenderer.removeListener(IPC.COMPAT_TOOLS_PROGRESS, handler)
+  },
+  onCompatToolsUpdateAvailable: (cb: (p: CompatToolsUpdateAvailablePayload) => void) => {
+    const handler = (_: unknown, p: CompatToolsUpdateAvailablePayload) => cb(p)
+    ipcRenderer.on(IPC.COMPAT_TOOLS_UPDATE_AVAILABLE, handler)
+    return () => ipcRenderer.removeListener(IPC.COMPAT_TOOLS_UPDATE_AVAILABLE, handler)
+  },
 
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.SETTINGS_GET),
   setSettings: (settings: AppSettings) => ipcRenderer.invoke(IPC.SETTINGS_SET, settings),
