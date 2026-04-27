@@ -2,7 +2,11 @@
 # Download the latest GitHub release AppImage for SteamToolsCachyOS (Electron build), extract it, install under ~/.local/share.
 # Extraction uses --appimage-extract so FUSE (libfuse.so.2) is NOT required to run the app.
 # Requires: curl, python3.
-# Usage: curl -fsSL https://raw.githubusercontent.com/Mindsaver/SteamToolsCachyOS/main/scripts/install-latest-appimage-github.sh | bash
+# Usage (GitHub API avoids raw.githubusercontent CDN lag on branch URLs):
+#   curl -fsSL -H "Accept: application/vnd.github.v3.raw" \
+#     "https://api.github.com/repos/Mindsaver/SteamToolsCachyOS/contents/scripts/install-latest-appimage-github.sh?ref=main" \
+#     | bash
+# Forks: replace Mindsaver/SteamToolsCachyOS in that URL (same as STEAMTOOLS_INSTALL_REPO).
 set -euo pipefail
 
 DEFAULT_OWNER="Mindsaver"

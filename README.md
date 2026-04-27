@@ -23,8 +23,12 @@ curl -fsSL https://raw.githubusercontent.com/Mindsaver/SteamToolsCachyOS/main/sc
 Downloads `SteamToolsCachyOS-Linux-x86_64.AppImage`, **extracts** it, points the menu entry and `~/.local/bin/SteamToolsCachyOS` at **`squashfs-root/AppRun`**. Requires that the **latest** GitHub release includes this AppImage (from the Release Electron workflow). **Running the `.AppImage` file directly** (e.g. double-click from Downloads) still needs **FUSE 2** on many distros; the one-liner avoids that by extracting.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Mindsaver/SteamToolsCachyOS/main/scripts/install-latest-appimage-github.sh | bash
+curl -fsSL -H "Accept: application/vnd.github.v3.raw" \
+  "https://api.github.com/repos/Mindsaver/SteamToolsCachyOS/contents/scripts/install-latest-appimage-github.sh?ref=main" \
+  | bash
 ```
+
+`raw.githubusercontent.com/.../main/...` is often **CDN-cached** and can lag behind `main` after a push; the **Contents API** URL above tracks `main` immediately. For a **fork**, change `Mindsaver/SteamToolsCachyOS` in that URL (same convention as `STEAMTOOLS_INSTALL_REPO`).
 
 Remove later: `~/.local/share/SteamToolsCachyOS/uninstall-github-appimage.sh`.
 
