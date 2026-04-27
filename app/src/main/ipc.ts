@@ -23,6 +23,7 @@ import {
 import type {
   CompatProviderId,
   CompatGithubReleaseRow,
+  CompatInstallLayout,
   AppAboutInfo,
   AppSettings,
   SteamCompatSnapshot,
@@ -333,7 +334,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     IPC.COMPAT_TOOLS_INSTALL,
     async (
       _e,
-      payload: { provider: CompatProviderId; tag: string; cachyosArch?: 'x86_64' | 'x86_64_v4' }
+      payload: {
+        provider: CompatProviderId
+        tag: string
+        cachyosArch?: 'x86_64' | 'x86_64_v4'
+        installLayout?: CompatInstallLayout
+      }
     ) => {
       const settings = loadSettings()
       const installPath = settings.steamPath || resolveSteamInstall()
@@ -344,6 +350,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         tag: payload.tag,
         steamInstall: installPath,
         cachyosArch: arch,
+        installLayout: payload.installLayout ?? 'default',
         onProgress: (p) => mainWindow.webContents.send(IPC.COMPAT_TOOLS_PROGRESS, p),
       })
     }

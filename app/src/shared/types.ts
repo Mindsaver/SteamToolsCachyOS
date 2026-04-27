@@ -123,8 +123,11 @@ export interface UpdateInfo {
 
 export type CompatProviderId = 'ge_proton' | 'proton_cachyos'
 
-/** `none` = off. `latest` = auto update on (stored value name kept for existing settings files). */
-export type CompatTrackMode = 'none' | 'latest'
+/** `latest_slot` = stable folder + Steam names like “Proton-CachyOS (Latest)”. `default` = archive layout as shipped. */
+export type CompatInstallLayout = 'default' | 'latest_slot'
+
+/** `rolling` = follow newest tag in the list. `pinned` = install only the chosen tag (no background “latest” checks). */
+export type CompatReleaseChannel = 'rolling' | 'pinned'
 
 export type CachyosArchChoice = 'x86_64' | 'x86_64_v4'
 
@@ -135,10 +138,20 @@ export interface AppSettings {
   autoUpdate: boolean
   autoUpdateThrottleHours: number
   theme: 'dark' | 'light' | 'system'
-  /** Auto update GE-Proton from GitHub (throttled background check on app startup; any page). */
-  geProtonTrack: CompatTrackMode
-  /** Auto update Proton-CachyOS from GitHub (same; respects SLR/arch filters below). */
-  protonCachyosTrack: CompatTrackMode
+  /** Follow newest GE-Proton tag vs pick a fixed version. */
+  geProtonChannel: CompatReleaseChannel
+  /** When channel is rolling, allow throttled background GitHub checks + optional silent install. */
+  geProtonAutoUpdate: boolean
+  /** Installed tool `internalName` that receives GE-Proton background updates (Latest-line install). */
+  geProtonAutoUpdateInternalName: string | null
+  /** Last tag chosen when channel is pinned (UI restore). */
+  geProtonPinnedTag: string | null
+  /** Follow newest Proton-CachyOS tag vs pick a fixed version. */
+  protonCachyosChannel: CompatReleaseChannel
+  protonCachyosAutoUpdate: boolean
+  /** Installed tool `internalName` that receives Proton-CachyOS background updates (Latest-line install). */
+  protonCachyosAutoUpdateInternalName: string | null
+  protonCachyosPinnedTag: string | null
   /** Prefer SLR-tagged CachyOS releases (`-slr` in tag). */
   protonCachyosSlrOnly: boolean
   protonCachyosArch: CachyosArchChoice

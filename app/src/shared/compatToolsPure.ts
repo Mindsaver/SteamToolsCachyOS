@@ -1,6 +1,6 @@
 /** Pure helpers for compatibility-tool install (unit-tested; no Node I/O). */
 
-import type { CachyosArchChoice } from './types'
+import type { CachyosArchChoice, CompatProviderId, InstalledCompatToolRow } from './types'
 
 export interface ReleaseAssetStub {
   name: string
@@ -36,6 +36,38 @@ export function isGeProtonTag(tag: string): boolean {
 
 export function isCachyosProtonTag(tag: string): boolean {
   return tag.trim().toLowerCase().startsWith('cachyos-')
+}
+
+/**
+ * Steam compatibility tool rows that represent the “rolling / Latest” product line (not a fixed version-only slot).
+ * Used to show per-install auto-update + CachyOS options only on that entry.
+ */
+export function isRollingLineCompatToolRow(
+  row: Pick<InstalledCompatToolRow, 'displayName' | 'internalName' | 'dirName' | 'provider'>
+): boolean {
+  if (row.provider !== 'ge_proton' && row.provider !== 'proton_cachyos') return false
+  const blob = `${row.displayName} ${row.internalName} ${row.dirName}`.toLowerCase()
+  if (/\blatest\b/.test(blob)) return true
+  if (/\brolling\b/.test(blob)) return true
+  if (/\bprotontip\b/.test(blob)) return true
+  if (row.internalName === latestSlotInternalToolName('ge_proton')) return true
+  if (row.internalName === latestSlotInternalToolName('proton_cachyos')) return true
+  return false
+}
+
+/** `compatibilitytools.d` folder name for our managed Latest install. */
+export function latestSlotSteamDirName(provider: CompatProviderId): string {
+  return provider === 'ge_proton' ? 'GE-Proton Latest' : 'Proton-CachyOS Latest'
+}
+
+/** Stable `compat_tools` key so Steam + this app keep the same tool across tag bumps. */
+export function latestSlotInternalToolName(provider: CompatProviderId): string {
+  return provider === 'ge_proton' ? 'GE-Proton-SteamTools-Latest' : 'proton_cachyos_steamtools_latest'
+}
+
+/** `display_name` written into compatibilitytool.vdf. */
+export function latestSlotDisplayName(provider: CompatProviderId): string {
+  return provider === 'ge_proton' ? 'GE-Proton (Latest)' : 'Proton-CachyOS (Latest)'
 }
 
 /** When true, keep only tags whose name includes "-slr" (Steam Linux Runtime line). */

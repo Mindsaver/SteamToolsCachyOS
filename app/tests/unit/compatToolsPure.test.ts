@@ -9,6 +9,9 @@ import {
   bestInstalledGeTag,
   extractCachyosTagFromText,
   expectedCachyosArchiveName,
+  isRollingLineCompatToolRow,
+  latestSlotSteamDirName,
+  latestSlotDisplayName,
 } from '../../src/shared/compatToolsPure'
 
 describe('compatToolsPure', () => {
@@ -73,5 +76,38 @@ describe('compatToolsPure', () => {
   it('extractCachyosTagFromText', () => {
     expect(extractCachyosTagFromText('Proton-CachyOS Latest')).toBe(null)
     expect(extractCachyosTagFromText('foo cachyos-10.0-20260420-slr bar')).toBe('cachyos-10.0-20260420-slr')
+  })
+
+  it('isRollingLineCompatToolRow detects Latest / rolling branding', () => {
+    expect(
+      isRollingLineCompatToolRow({
+        displayName: 'Proton-CachyOS (Latest)',
+        internalName: 'cachyos-10.0-slr',
+        dirName: 'Proton-CachyOS',
+        provider: 'proton_cachyos',
+      })
+    ).toBe(true)
+    expect(
+      isRollingLineCompatToolRow({
+        displayName: 'GE-Proton',
+        internalName: 'GE-Proton10-50',
+        dirName: 'GE-Proton',
+        provider: 'ge_proton',
+      })
+    ).toBe(false)
+    expect(
+      isRollingLineCompatToolRow({
+        displayName: 'GE-Proton (Latest)',
+        internalName: 'GE-Proton10-50',
+        dirName: 'GE-Proton',
+        provider: 'ge_proton',
+      })
+    ).toBe(true)
+  })
+
+  it('latest slot Steam folder and display names', () => {
+    expect(latestSlotSteamDirName('proton_cachyos')).toBe('Proton-CachyOS Latest')
+    expect(latestSlotDisplayName('proton_cachyos')).toBe('Proton-CachyOS (Latest)')
+    expect(latestSlotSteamDirName('ge_proton')).toBe('GE-Proton Latest')
   })
 })

@@ -215,6 +215,7 @@ export const mockApi = {
     provider: CompatProviderId
     tag: string
     cachyosArch?: 'x86_64' | 'x86_64_v4'
+    installLayout?: 'default' | 'latest_slot'
   }) => {
     await delay(200)
     compatProgCh.emit({ type: 'log', message: 'Simulated download…' })

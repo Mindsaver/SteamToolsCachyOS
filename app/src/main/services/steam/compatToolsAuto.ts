@@ -1,6 +1,7 @@
 import type { BrowserWindow } from 'electron'
 import { IPC } from '../../../shared/ipc-channels'
 import type { AppSettings, CompatToolsUpdateAvailablePayload } from '../../../shared/types'
+import { latestSlotInternalToolName } from '../../../shared/compatToolsPure'
 import { loadSettings, saveSettings } from '../settings'
 import { resolveSteamInstall } from './install'
 import {
@@ -8,6 +9,7 @@ import {
   checkCachyosUpdate,
   installCompatRelease,
 } from './compatInstall'
+import { listInstalledCompatTools } from './compatInstalled'
 
 function patchSettings(partial: Partial<AppSettings>): void {
   saveSettings({ ...loadSettings(), ...partial })
@@ -17,20 +19,46 @@ function patchSettings(partial: Partial<AppSettings>): void {
 export async function runCompatToolsAutoCheck(win: BrowserWindow | null): Promise<void> {
   if (!win?.webContents) return
 
-  const settings = loadSettings()
+  let settings = loadSettings()
   const steam = settings.steamPath || resolveSteamInstall()
   if (!steam) return
 
+  const installed = listInstalledCompatTools(steam)
+  const stale: Partial<AppSettings> = {}
+  const ge = settings.geProtonAutoUpdateInternalName
+  if (ge && !installed.some((r) => r.provider === 'ge_proton' && r.internalName === ge)) {
+    stale.geProtonAutoUpdateInternalName = null
+    stale.geProtonAutoUpdate = false
+  }
+  const ca = settings.protonCachyosAutoUpdateInternalName
+  if (ca && !installed.some((r) => r.provider === 'proton_cachyos' && r.internalName === ca)) {
+    stale.protonCachyosAutoUpdateInternalName = null
+    stale.protonCachyosAutoUpdate = false
+  }
+  if (Object.keys(stale).length) {
+    patchSettings(stale)
+    settings = loadSettings()
+  }
+
   const now = Date.now()
   const throttleMs = Math.max(0.25, settings.compatToolsCheckThrottleHours || 24) * 3600000
-
   const shouldRun = (last: number) => !last || now - last >= throttleMs
 
   const notify = (payload: CompatToolsUpdateAvailablePayload) => {
     win.webContents.send(IPC.COMPAT_TOOLS_UPDATE_AVAILABLE, payload)
   }
 
-  if (settings.geProtonTrack === 'latest' && shouldRun(settings.compatGeLastCheckEpoch)) {
+  /** Legacy: global “rolling” + auto before per-install binding existed. */
+  const geLegacyRolling =
+    settings.geProtonChannel === 'rolling' &&
+    settings.geProtonAutoUpdate &&
+    !settings.geProtonAutoUpdateInternalName
+  const geBound =
+    settings.geProtonAutoUpdate &&
+    Boolean(settings.geProtonAutoUpdateInternalName) &&
+    installed.some((r) => r.provider === 'ge_proton' && r.internalName === settings.geProtonAutoUpdateInternalName)
+
+  if ((geBound || geLegacyRolling) && shouldRun(settings.compatGeLastCheckEpoch)) {
     try {
       const r = await checkGeProtonUpdate(steam)
       patchSettings({
@@ -38,11 +66,16 @@ export async function runCompatToolsAutoCheck(win: BrowserWindow | null): Promis
         compatGeLastRemoteTag: r.remoteTag,
       })
       if (r.hasUpdate && r.remoteTag) {
-        if (settings.compatToolsSilentAutoInstall) {
+        const s2 = loadSettings()
+        if (s2.compatToolsSilentAutoInstall) {
           await installCompatRelease({
             provider: 'ge_proton',
             tag: r.remoteTag,
             steamInstall: steam,
+            installLayout:
+              s2.geProtonAutoUpdateInternalName === latestSlotInternalToolName('ge_proton')
+                ? 'latest_slot'
+                : 'default',
             onProgress: (p) => win.webContents.send(IPC.COMPAT_TOOLS_PROGRESS, p),
           })
         } else {
@@ -59,20 +92,35 @@ export async function runCompatToolsAutoCheck(win: BrowserWindow | null): Promis
     }
   }
 
-  if (settings.protonCachyosTrack === 'latest' && shouldRun(settings.compatCachyosLastCheckEpoch)) {
+  const caLegacyRolling =
+    settings.protonCachyosChannel === 'rolling' &&
+    settings.protonCachyosAutoUpdate &&
+    !settings.protonCachyosAutoUpdateInternalName
+  const caBound =
+    settings.protonCachyosAutoUpdate &&
+    Boolean(settings.protonCachyosAutoUpdateInternalName) &&
+    installed.some((r) => r.provider === 'proton_cachyos' && r.internalName === settings.protonCachyosAutoUpdateInternalName)
+
+  if ((caBound || caLegacyRolling) && shouldRun(settings.compatCachyosLastCheckEpoch)) {
     try {
-      const r = await checkCachyosUpdate(steam, settings.protonCachyosSlrOnly, settings.protonCachyosArch)
+      const s3 = loadSettings()
+      const r = await checkCachyosUpdate(steam, s3.protonCachyosSlrOnly, s3.protonCachyosArch)
       patchSettings({
         compatCachyosLastCheckEpoch: Date.now(),
         compatCachyosLastRemoteTag: r.remoteTag,
       })
       if (r.hasUpdate && r.remoteTag) {
-        if (settings.compatToolsSilentAutoInstall) {
+        const s4 = loadSettings()
+        if (s4.compatToolsSilentAutoInstall) {
           await installCompatRelease({
             provider: 'proton_cachyos',
             tag: r.remoteTag,
             steamInstall: steam,
-            cachyosArch: settings.protonCachyosArch,
+            cachyosArch: s4.protonCachyosArch,
+            installLayout:
+              s4.protonCachyosAutoUpdateInternalName === latestSlotInternalToolName('proton_cachyos')
+                ? 'latest_slot'
+                : 'default',
             onProgress: (p) => win.webContents.send(IPC.COMPAT_TOOLS_PROGRESS, p),
           })
         } else {

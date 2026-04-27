@@ -16,8 +16,14 @@ const DEFAULTS: AppSettings = {
   autoUpdate: true,
   autoUpdateThrottleHours: 1,
   theme: 'dark',
-  geProtonTrack: 'none',
-  protonCachyosTrack: 'none',
+  geProtonChannel: 'pinned',
+  geProtonAutoUpdate: false,
+  geProtonAutoUpdateInternalName: null,
+  geProtonPinnedTag: null,
+  protonCachyosChannel: 'pinned',
+  protonCachyosAutoUpdate: false,
+  protonCachyosAutoUpdateInternalName: null,
+  protonCachyosPinnedTag: null,
   protonCachyosSlrOnly: true,
   protonCachyosArch: 'x86_64',
   compatToolsCheckThrottleHours: 24,
@@ -207,7 +213,7 @@ export function Settings() {
         <CardHeader>
           <CardTitle className="text-sm">Compatibility tools (GitHub)</CardTitle>
           <CardDescription>
-            Throttle applies when <strong>auto update</strong> is enabled for GE-Proton or Proton-CachyOS (runs in the background on startup; any page).
+            Throttle applies when <strong>Auto update</strong> is enabled on a Latest-line installed tool on the Compatibility tools page (background check on startup; any page).
             Optional env <code className="text-xs bg-muted px-1 py-0.5 rounded">STEAMTOOLS_GITHUB_TOKEN</code>{' '}
             raises GitHub API limits.
           </CardDescription>

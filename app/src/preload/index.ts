@@ -17,6 +17,7 @@ import type {
   InstalledCompatToolRow,
   CompatUpdateCheckResult,
   CompatInstallProgress,
+  CompatInstallLayout,
   CompatToolsUpdateAvailablePayload,
 } from '../shared/types'
 
@@ -82,6 +83,7 @@ const realApi = {
     provider: CompatProviderId
     tag: string
     cachyosArch?: 'x86_64' | 'x86_64_v4'
+    installLayout?: CompatInstallLayout
   }) => ipcRenderer.invoke(IPC.COMPAT_TOOLS_INSTALL, req),
   openCompatUserSettings: (internalName: string) =>
     ipcRenderer.invoke(IPC.COMPAT_TOOLS_OPEN_USER_SETTINGS, internalName),

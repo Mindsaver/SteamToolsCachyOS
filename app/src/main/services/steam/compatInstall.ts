@@ -6,9 +6,11 @@ import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import vdf from 'simple-vdf'
 import type {
   CompatProviderId,
   CachyosArchChoice,
+  CompatInstallLayout,
   CompatInstallProgress,
   CompatUpdateCheckResult,
 } from '../../../shared/types'
@@ -22,11 +24,15 @@ import {
   bestInstalledGeTag,
   bestInstalledCachyosTagFromReleases,
   extractCachyosTagFromText,
+  latestSlotDisplayName,
+  latestSlotInternalToolName,
+  latestSlotSteamDirName,
 } from '../../../shared/compatToolsPure'
 import type { ReleaseStub } from '../../../shared/compatToolsPure'
 import { fetchReleaseByTag, fetchRepoReleases } from './compatGithub'
 import { listInstalledCompatTools } from './compatInstalled'
 import { isSteamRunning } from './processes'
+import { loadSettings } from '../settings'
 
 const execFileAsync = promisify(execFile)
 
@@ -90,6 +96,37 @@ async function downloadToFile(
   await pipeline(nodeIn, fs.createWriteStream(dest))
 }
 
+function getCompatToolsEntries(data: Record<string, unknown>): Record<string, unknown> | null {
+  for (const topVal of Object.values(data)) {
+    if (!topVal || typeof topVal !== 'object') continue
+    const ct = (topVal as Record<string, unknown>)['compat_tools']
+    if (ct && typeof ct === 'object') return ct as Record<string, unknown>
+  }
+  const ct = data['compat_tools']
+  if (ct && typeof ct === 'object') return ct as Record<string, unknown>
+  return null
+}
+
+function rewriteCompatToolVdfLatestSlot(extractedToolDir: string, provider: CompatProviderId): void {
+  const vdfPath = path.join(extractedToolDir, 'compatibilitytool.vdf')
+  if (!fs.existsSync(vdfPath)) throw new Error('compatibilitytool.vdf missing after extract')
+  const raw = fs.readFileSync(vdfPath, 'utf-8')
+  const data = vdf.parse(raw) as Record<string, unknown>
+  const entries = getCompatToolsEntries(data)
+  if (!entries) throw new Error('compat_tools block not found in compatibilitytool.vdf')
+  const keys = Object.keys(entries).filter((k) => entries[k] && typeof entries[k] === 'object')
+  if (keys.length !== 1) {
+    throw new Error(`Expected exactly one compat_tools tool entry, found ${keys.length}`)
+  }
+  const oldKey = keys[0]
+  const toolVal = { ...(entries[oldKey] as Record<string, unknown>) }
+  delete entries[oldKey]
+  const newKey = latestSlotInternalToolName(provider)
+  toolVal.display_name = latestSlotDisplayName(provider)
+  entries[newKey] = toolVal
+  fs.writeFileSync(vdfPath, vdf.stringify(data), 'utf-8')
+}
+
 async function extractArchive(archivePath: string, destDir: string): Promise<void> {
   const lower = archivePath.toLowerCase()
   let args: string[]
@@ -120,14 +157,42 @@ function tmpCompatDir(): string {
   return path.join(os.tmpdir(), `steamtools-compat-${randomBytes(8).toString('hex')}`)
 }
 
+async function extractToSingleSubdir(archivePath: string, stageDir: string): Promise<string> {
+  await fs.promises.mkdir(stageDir, { recursive: true })
+  await extractArchive(archivePath, stageDir)
+  const names = await fs.promises.readdir(stageDir)
+  const dirs: string[] = []
+  for (const n of names) {
+    const p = path.join(stageDir, n)
+    const st = await fs.promises.stat(p)
+    if (st.isDirectory()) dirs.push(n)
+  }
+  if (dirs.length !== 1) {
+    throw new Error(
+      dirs.length === 0
+        ? 'Archive did not contain a top-level tool directory'
+        : `Expected one top-level directory in archive, found: ${dirs.join(', ')}`
+    )
+  }
+  return path.join(stageDir, dirs[0])
+}
+
+async function moveTreeReplace(src: string, dest: string): Promise<void> {
+  await fs.promises.rm(dest, { recursive: true, force: true }).catch(() => {})
+  await fs.promises.cp(src, dest, { recursive: true })
+  await fs.promises.rm(src, { recursive: true, force: true })
+}
+
 export async function installCompatRelease(options: {
   provider: CompatProviderId
   tag: string
   steamInstall: string
   cachyosArch?: CachyosArchChoice
+  /** When `latest_slot`, install under `Proton-CachyOS Latest` / `GE-Proton Latest` with stable Steam names. */
+  installLayout?: CompatInstallLayout
   onProgress?: (p: CompatInstallProgress) => void
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { provider, tag, steamInstall, cachyosArch = 'x86_64', onProgress } = options
+  const { provider, tag, steamInstall, cachyosArch = 'x86_64', installLayout = 'default', onProgress } = options
   if (isSteamRunning()) {
     emit(onProgress, {
       type: 'log',
@@ -192,10 +257,22 @@ export async function installCompatRelease(options: {
       await verifySha512File(archivePath, sumPath, archive.name)
     }
 
-    emit(onProgress, { type: 'log', message: `Extracting into ${destRoot}…` })
-    await extractArchive(archivePath, destRoot)
-
-    emit(onProgress, { type: 'done', message: `Installed ${archive.name}` })
+    if (installLayout === 'latest_slot') {
+      const stage = path.join(work, 'stage')
+      const extracted = await extractToSingleSubdir(archivePath, stage)
+      emit(onProgress, {
+        type: 'log',
+        message: `Publishing as “${latestSlotDisplayName(provider)}” (${latestSlotSteamDirName(provider)})…`,
+      })
+      rewriteCompatToolVdfLatestSlot(extracted, provider)
+      const finalPath = path.join(destRoot, latestSlotSteamDirName(provider))
+      await moveTreeReplace(extracted, finalPath)
+      emit(onProgress, { type: 'done', message: `Installed ${latestSlotDisplayName(provider)}` })
+    } else {
+      emit(onProgress, { type: 'log', message: `Extracting into ${destRoot}…` })
+      await extractArchive(archivePath, destRoot)
+      emit(onProgress, { type: 'done', message: `Installed ${archive.name}` })
+    }
     return { ok: true }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
@@ -229,7 +306,14 @@ export function getInstalledCompatRows(steamInstall: string) {
 export async function checkGeProtonUpdate(steamInstall: string): Promise<CompatUpdateCheckResult> {
   const rows = listInstalledCompatTools(steamInstall)
   const geNames = rows.filter((r) => r.provider === 'ge_proton').map((r) => r.internalName)
-  const installedBest = bestInstalledGeTag(geNames)
+  let installedBest = bestInstalledGeTag(geNames)
+  if (geNames.includes(latestSlotInternalToolName('ge_proton'))) {
+    const last = loadSettings().compatGeLastRemoteTag
+    if (last) {
+      if (!installedBest) installedBest = last
+      else if (compareGeTagsDesc(last, installedBest) < 0) installedBest = last
+    }
+  }
 
   const releases = await listGeReleasesForUi()
   releases.sort((a, b) => compareGeTagsDesc(a.tag_name, b.tag_name))
@@ -266,6 +350,10 @@ export async function checkCachyosUpdate(
       const ex = extractCachyosTagFromText(text)
       if (ex) tagSet.add(ex)
     }
+  }
+  if (rows.some((r) => r.internalName === latestSlotInternalToolName('proton_cachyos'))) {
+    const last = loadSettings().compatCachyosLastRemoteTag
+    if (last) tagSet.add(last)
   }
   const tagsFromRows = [...tagSet]
 

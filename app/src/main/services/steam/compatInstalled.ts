@@ -2,12 +2,22 @@ import fs from 'fs'
 import path from 'path'
 import vdf from 'simple-vdf'
 import type { CompatProviderId, InstalledCompatToolRow } from '../../../shared/types'
-import { isGeProtonTag, isCachyosProtonTag } from '../../../shared/compatToolsPure'
+import { isGeProtonTag, isCachyosProtonTag, latestSlotInternalToolName } from '../../../shared/compatToolsPure'
 
 function detectProvider(internalName: string, dirName: string): CompatProviderId | 'other' {
   const n = `${internalName} ${dirName}`
-  if (isGeProtonTag(internalName) || /GE-Proton/i.test(n)) return 'ge_proton'
-  if (isCachyosProtonTag(internalName) || /cachyos/i.test(internalName) || /Proton-CachyOS/i.test(dirName))
+  if (
+    isGeProtonTag(internalName) ||
+    internalName === latestSlotInternalToolName('ge_proton') ||
+    /GE-Proton/i.test(n)
+  )
+    return 'ge_proton'
+  if (
+    isCachyosProtonTag(internalName) ||
+    internalName === latestSlotInternalToolName('proton_cachyos') ||
+    /cachyos/i.test(internalName) ||
+    /Proton-CachyOS/i.test(dirName)
+  )
     return 'proton_cachyos'
   return 'other'
 }
