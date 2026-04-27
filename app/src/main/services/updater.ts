@@ -9,7 +9,6 @@ import log from 'electron-log'
 /**
  * `pkexec` (used by electron-updater for non-root GUI installs) runs the install command with a
  * minimal PATH. A bare `pacman` in `bash -c` can then fail with exit 127. Use the real path.
- * @see https://github.com/electron-userland/electron-builder/issues (polkit / PATH)
  */
 function patchLinuxUpdaterPacmanFullPath(): void {
   if (process.platform !== 'linux') {
