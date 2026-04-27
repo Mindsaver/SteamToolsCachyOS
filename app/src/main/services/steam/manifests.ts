@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { InstalledGame } from '../../../shared/types'
 
-// Heuristic filter matching steam-game-symlinks.sh skip_heuristic_non_game
+// Heuristic filter matching symlink hub skip_heuristic_non_game behavior
 const NON_GAME_PREFIXES = [
   'Steam Linux Runtime',
   'Proton ',

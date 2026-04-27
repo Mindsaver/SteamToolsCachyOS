@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Download the latest GitHub release .pacman for SteamToolsCachyOS (Electron) and install with pacman.
 # Default on Arch/CachyOS: system package under /opt, same as in-app updater.
-# Requires: curl, python3, pacman, sudo (unless already root).
+# Requires: curl, jq, pacman, sudo (unless already root).
 # Usage:
 #   curl -fsSL -H "Accept: application/vnd.github.v3.raw" \
 #     "https://api.github.com/repos/Mindsaver/SteamToolsCachyOS/contents/scripts/install-latest-pacman-github.sh?ref=main" \
@@ -25,9 +25,10 @@ else
   GITHUB_REPO="${GITHUB_REPO:-$DEFAULT_REPO}"
 fi
 
-for cmd in curl python3 pacman; do
+for cmd in curl jq pacman; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "Missing required command: $cmd" >&2
+    echo "Install jq if needed (e.g. pacman -S jq on Arch/CachyOS)." >&2
     echo "This installer requires pacman (Arch / CachyOS). Without it, download the .pacman from the latest GitHub Release and install on a pacman-based system." >&2
     exit 1
   fi
@@ -50,25 +51,17 @@ if [[ "$HTTP_CODE" != "200" ]]; then
   exit 1
 fi
 
-read -r ASSET_URL RELEASE_TAG < <(python3 -c "
-import json, sys
-asset_name = sys.argv[2]
-with open(sys.argv[1], encoding='utf-8') as f:
-    data = json.load(f)
-url = None
-for a in data.get('assets') or []:
-    if a.get('name') == asset_name:
-        url = a.get('browser_download_url')
-        break
-if not url:
-    print('No asset named ' + asset_name + ' in the latest release.', file=sys.stderr)
-    print('The Release Electron workflow must upload this .pacman file.', file=sys.stderr)
-    sys.exit(1)
-print(url)
-tag = data.get('tag_name') or ''
-print(tag)
-" "$TMPJSON" "$ASSET_NAME")
+RELEASE_TAG="$(jq -r '.tag_name // empty' "$TMPJSON")"
+ASSET_URL="$(jq -r --arg name "$ASSET_NAME" '
+  (.assets // [])[] | select(.name == $name) | .browser_download_url
+' "$TMPJSON" | head -n1)"
 rm -f "$TMPJSON"
+
+if [[ -z "$ASSET_URL" ]]; then
+  echo "No asset named ${ASSET_NAME} in the latest release." >&2
+  echo "The Release Electron workflow must upload this .pacman file." >&2
+  exit 1
+fi
 
 echo "Release: ${RELEASE_TAG:-unknown}"
 echo "Downloading: $ASSET_NAME"

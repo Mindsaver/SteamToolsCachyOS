@@ -1,7 +1,7 @@
 import fs from 'fs'
 import type { DllVersionInfo } from '../../../shared/types'
 
-// Ports scripts/dll_ffx_versions.py — heuristic FFX stack version detection from PE DLL bytes.
+// Heuristic FFX stack version detection from PE DLL bytes.
 // Reads the file as a Buffer and applies the same semver regex + keyword scoring.
 
 const SEMVER_RE = /(?<![0-9.])(\d{1,3}\.\d{1,3}\.\d{1,3}(?:\.\d{1,5})?)(?![0-9.])/g

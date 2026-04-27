@@ -3,7 +3,7 @@ import path from 'path'
 import vdf from 'simple-vdf'
 import type { CompatToolInfo } from '../../../shared/types'
 
-// Ports steam_compat_context.py — reads config.vdf CompatToolMapping
+// Reads config.vdf CompatToolMapping for Steam compatibility-tool context.
 // to identify what Proton/compat tool is configured per game.
 
 interface CompatMapping {

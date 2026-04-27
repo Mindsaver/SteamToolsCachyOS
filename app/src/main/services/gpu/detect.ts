@@ -3,7 +3,7 @@ import path from 'path'
 import { execSync } from 'child_process'
 import type { GpuInfo } from '../../../shared/types'
 
-// Ports scripts/gpu_vendor_detect.py
+// GPU vendor hints from GL/Vulkan/renderer strings.
 // Primary: /sys/class/drm/card*/device/vendor (sysfs)
 // Fallback: lspci output
 

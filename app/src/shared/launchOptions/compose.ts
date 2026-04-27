@@ -1,5 +1,5 @@
 /**
- * Pure TS port of scripts/launch_options_compose.py.
+ * Launch-option compose rules (preset expansion, composed env/%command% lines).
  * No Node.js dependencies — safe to import in both main and renderer.
  *
  * All item-level logic dispatches through section handlers (env /

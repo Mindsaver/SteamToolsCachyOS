@@ -5,7 +5,7 @@ import { collectGames } from '../steam/manifests'
 import { parseLibraryPaths } from '../steam/install'
 import type { SymlinkHubOptions, SymlinkProgress } from '../../../shared/types'
 
-// Ports scripts/steam-game-symlinks.sh entirely in TypeScript.
+// Symlink hub (per-game folders, links, optional DLL copy) — implemented in TypeScript.
 // All filesystem operations use Node's fs module — no bash invocations.
 
 type ProgressCallback = (p: SymlinkProgress) => void

@@ -1,22 +1,19 @@
-# Byte-compiled / cache
+# Local build / distribution dirs
+build/
+dist/
+*.spec.bak
+
+# Stray Python bytecode (repo is Electron-only; ignore if present locally)
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
 
-# Virtual environments
+# Virtual environments (optional tooling)
 .venv/
 .venv-*/
 venv/
 ENV/
 
-# PyInstaller
-build/
-dist/
-*.spec.bak
-
-# Test / type / lint caches
-.pytest_cache/
+# Type / lint caches
 .mypy_cache/
 .ruff_cache/
 

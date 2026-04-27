@@ -3,7 +3,6 @@ import path from 'path'
 import vdf from 'simple-vdf'
 import { loadCompatMappings } from './compat'
 
-// Ports steam_compat_context.py user_settings.py detection logic.
 // Reads `compatibilitytools.d/<tool>/user_settings.py` for the active compat
 // tool for a given appId and extracts non-default env key/value overrides.
 
