@@ -7,9 +7,33 @@ import { IPC } from '../../shared/ipc-channels'
 import log from 'electron-log'
 
 /**
- * Linux: electron-updater defaults to AppImageUpdater, which logs a warning whenever
- * `APPIMAGE` is unset — including dev (`!app.isPackaged`) and extracted `--appimage-extract` installs.
- * Use PacmanUpdater when there is no AppImage layout and no distro package marker (`package-type`).
+ * `pkexec` (used by electron-updater for non-root GUI installs) runs the install command with a
+ * minimal PATH. A bare `pacman` in `bash -c` can then fail with exit 127. Use the real path.
+ * @see https://github.com/electron-userland/electron-builder/issues (polkit / PATH)
+ */
+function patchLinuxUpdaterPacmanFullPath(): void {
+  if (process.platform !== 'linux') {
+    return
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { LinuxUpdater } = require('electron-updater/out/LinuxUpdater') as {
+    LinuxUpdater: { prototype: { runCommandWithSudoIfNeeded(this: unknown, args: string[]): unknown } }
+  }
+  const orig = LinuxUpdater.prototype.runCommandWithSudoIfNeeded
+  LinuxUpdater.prototype.runCommandWithSudoIfNeeded = function (this: unknown, commandWithArgs: string[]) {
+    const args =
+      commandWithArgs[0] === 'pacman'
+        ? ['/usr/bin/pacman', ...commandWithArgs.slice(1)]
+        : commandWithArgs
+    return orig.call(this, args)
+  }
+}
+
+patchLinuxUpdaterPacmanFullPath()
+
+/**
+ * Linux: electron-updater's default selection logs noisy warnings in dev and unpackaged runs.
+ * Use PacmanUpdater when there is no distro package marker (`package-type`).
  * Installed .deb/.rpm/.pacman system packages ship `resources/package-type`; keep default selection.
  */
 function resolveAutoUpdater(): AppUpdater {
@@ -31,12 +55,12 @@ function resolveAutoUpdater(): AppUpdater {
     }
   }
 
-  if (process.env.APPIMAGE == null && pkgType == null) {
-    log.info('[updater] Linux without APPIMAGE / package-type — using PacmanUpdater (dev or extracted layout)')
+  if (pkgType == null) {
+    log.info('[updater] Linux without package-type — using PacmanUpdater (dev or unpacked layout)')
     return new PacmanUpdater()
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- AppImage (.AppImage + APPIMAGE) or deb/rpm/pacman via package-type
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- deb/rpm/pacman via package-type
   const mod = require('electron-updater') as typeof import('electron-updater')
   return mod.autoUpdater
 }
@@ -97,6 +121,12 @@ export function downloadUpdate(): void {
   })
 }
 
+/** Delay before quit so the renderer can paint “installing” UI after IPC returns. */
+const INSTALL_QUIT_DELAY_MS = 220
+
 export function installUpdate(): void {
-  autoUpdater.quitAndInstall(false, true)
+  send(IPC.UPDATE_INSTALL_STARTED)
+  setTimeout(() => {
+    autoUpdater.quitAndInstall(false, true)
+  }, INSTALL_QUIT_DELAY_MS)
 }
