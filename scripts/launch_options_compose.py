@@ -700,7 +700,11 @@ def set_preset_env(model: LaunchOptionsModel, env_key: str, value_when_on: str, 
     if on:
         _set_env(model, env_key, value_when_on)
     else:
-        _del_env(model, env_key)
+        off = preset_env_off_value(env_key, value_when_on)
+        if off is not None:
+            _set_env(model, env_key, off)
+        else:
+            _del_env(model, env_key)
 
 
 def preset_env_off_value(env_key: str, value_when_on: str) -> str | None:

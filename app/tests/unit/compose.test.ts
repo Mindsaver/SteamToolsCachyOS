@@ -12,6 +12,8 @@ import {
   isPresetActive,
   setPreset,
   presetState,
+  presetLauncherTriState,
+  envPresetSupportsExplicitDisable,
   tokenize,
   diffTokens,
   ENV_PRESETS,
@@ -233,13 +235,13 @@ describe('ENV_PRESETS + setPreset', () => {
     expect(m.env['PROTON_LOG']).toBe('1')
   })
 
-  it('deactivates a preset', () => {
+  it('deactivates a preset by writing explicit off value when known', () => {
     const preset = ENV_PRESETS.find((p) => p.id === 'proton_log')!
     let m = emptyModel()
     m = setPreset(m, preset, true)
     m = setPreset(m, preset, false)
     expect(isPresetActive(m, preset)).toBe(false)
-    expect(m.env['PROTON_LOG']).toBeUndefined()
+    expect(m.env['PROTON_LOG']).toBe('0')
   })
 
   it('DXVK_HUD preset active check handles non-zero values', () => {
@@ -252,6 +254,30 @@ describe('ENV_PRESETS + setPreset', () => {
   it('all presets have unique IDs', () => {
     const ids = ENV_PRESETS.map((p) => p.id)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+// ── presetLauncherTriState / envPresetSupportsExplicitDisable ─────────────────
+
+describe('presetLauncherTriState', () => {
+  const preset = ENV_PRESETS.find((p) => p.id === 'proton_no_esync')!
+
+  it('maps local-on to enabled', () => {
+    const m = parseLaunchOptions('PROTON_NO_ESYNC=1 %command%')
+    expect(presetLauncherTriState(m, preset, {})).toBe('enabled')
+  })
+
+  it('maps explicit counter without global to disabled', () => {
+    const m = parseLaunchOptions('PROTON_NO_ESYNC=0 %command%')
+    expect(presetLauncherTriState(m, preset, {})).toBe('disabled')
+  })
+
+  it('maps absent key without global to unset', () => {
+    expect(presetLauncherTriState(emptyModel(), preset, {})).toBe('unset')
+  })
+
+  it('reports whether explicit disable is supported', () => {
+    expect(envPresetSupportsExplicitDisable(preset)).toBe(true)
   })
 })
 
@@ -303,6 +329,11 @@ describe('presetState', () => {
     const state = presetState(m, preset, { PROTON_NO_ESYNC: '1' })
     expect(state.kind).toBe('local-off')
   })
+
+  it('returns local-off when local has explicit counter-value and no global', () => {
+    const m = parseLaunchOptions('PROTON_NO_ESYNC=0 %command%')
+    expect(presetState(m, preset, {}).kind).toBe('local-off')
+  })
 })
 
 // ── setPreset with globalEnv (counter-value) ─────────────────────────────────
@@ -317,11 +348,11 @@ describe('setPreset with globalEnv', () => {
     expect(result.envOrder).toContain('PROTON_NO_ESYNC')
   })
 
-  it('removes key entirely when no global env and disabling', () => {
+  it('writes off-value when disabling locally with no global env', () => {
     const m = parseLaunchOptions('PROTON_NO_ESYNC=1 %command%')
     const result = setPreset(m, preset, false, {})
-    expect(result.env['PROTON_NO_ESYNC']).toBeUndefined()
-    expect(result.envOrder).not.toContain('PROTON_NO_ESYNC')
+    expect(result.env['PROTON_NO_ESYNC']).toBe('0')
+    expect(result.envOrder).toContain('PROTON_NO_ESYNC')
   })
 
   it('sets the value normally when enabling', () => {

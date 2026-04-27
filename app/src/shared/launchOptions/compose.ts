@@ -519,6 +519,29 @@ export type PresetState =
   | { kind: 'global-other'; value: string }
   | { kind: 'local-overrides-global'; globalValue: string }
 
+/**
+ * Per-game env preset row: unset (omit from launch options), enabled (preset on value),
+ * disabled (explicit counter / off). Wrappers and gamescope use separate models (boolean / null).
+ */
+export type LauncherPresetTriState = 'unset' | 'enabled' | 'disabled'
+
+export function envPresetSupportsExplicitDisable(preset: EnvPreset): boolean {
+  if (!preset.envKey || preset.envValue == null) return false
+  return presetEnvOffValue(preset.envKey, preset.envValue) !== null
+}
+
+/** Maps full preset resolution to the three launcher positions for UI controls. */
+export function presetLauncherTriState(
+  model: LaunchOptionsModel,
+  preset: EnvPreset,
+  globalEnv: Record<string, string> = {}
+): LauncherPresetTriState {
+  const ps = presetState(model, preset, globalEnv)
+  if (ps.kind === 'on' || ps.kind === 'local-overrides-global') return 'enabled'
+  if (ps.kind === 'local-off') return 'disabled'
+  return 'unset'
+}
+
 export function presetState(
   model: LaunchOptionsModel,
   preset: EnvPreset,
@@ -528,6 +551,10 @@ export function presetState(
   const globalVal = globalEnv[preset.envKey!]
   const globalMatchesPreset = globalVal === preset.envValue
   const localVal = model.env[preset.envKey!]
+  const offVal =
+    preset.envKey && preset.envValue != null
+      ? presetEnvOffValue(preset.envKey, preset.envValue)
+      : null
 
   if (localActive) {
     if (globalVal !== undefined && !globalMatchesPreset) {
@@ -536,11 +563,11 @@ export function presetState(
     return { kind: 'on' }
   }
 
+  if (offVal !== null && localVal === offVal) {
+    return { kind: 'local-off' }
+  }
+
   if (globalVal !== undefined) {
-    const offVal = presetEnvOffValue(preset.envKey!, preset.envValue!)
-    if (offVal !== null && localVal === offVal) {
-      return { kind: 'local-off' }
-    }
     if (globalMatchesPreset) return { kind: 'global-on' }
     return { kind: 'global-other', value: globalVal }
   }
@@ -574,14 +601,11 @@ export function setPreset(
     if (!next.env[preset.envKey!]) next.envOrder.push(preset.envKey!)
     next.env[preset.envKey!] = preset.envValue!
   } else {
-    const hasGlobal = preset.envKey! in globalEnv
-    if (hasGlobal) {
-      const offVal = presetEnvOffValue(preset.envKey!, preset.envValue!)
-      if (offVal !== null) {
-        if (!next.env[preset.envKey!]) next.envOrder.push(preset.envKey!)
-        next.env[preset.envKey!] = offVal
-        return next
-      }
+    const offVal = presetEnvOffValue(preset.envKey!, preset.envValue!)
+    if (offVal !== null) {
+      if (!next.env[preset.envKey!]) next.envOrder.push(preset.envKey!)
+      next.env[preset.envKey!] = offVal
+      return next
     }
     delete next.env[preset.envKey!]
     next.envOrder = next.envOrder.filter((k) => k !== preset.envKey)

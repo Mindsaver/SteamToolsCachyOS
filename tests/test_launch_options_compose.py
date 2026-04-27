@@ -72,6 +72,11 @@ class ParseSerializeTests(unittest.TestCase):
         self.assertEqual(c.preset_env_off_value("SteamDeck", "0"), "1")
         self.assertEqual(c.preset_env_off_value("DXVK_HUD", "fps"), "0")
 
+    def test_set_preset_env_off_writes_counter_when_known(self) -> None:
+        m, _ = c.parse_launch_options("PROTON_LOG=1 %command%")
+        c.set_preset_env(m, "PROTON_LOG", "1", False)
+        self.assertEqual(m.env.get("PROTON_LOG"), "0")
+
 
 class GpuVendorTests(unittest.TestCase):
     def test_detect_runs(self) -> None:

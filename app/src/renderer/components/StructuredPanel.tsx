@@ -10,8 +10,10 @@ import {
   CATALOG_TABS,
   ENV_PRESETS,
   OVERVIEW_PRESET_IDS,
-  isPresetActive,
   presetState,
+  presetEnvOffValue,
+  envPresetSupportsExplicitDisable,
+  presetLauncherTriState,
   setPreset,
   clearPreset,
   hasUnrepresentedTokens,
@@ -23,7 +25,7 @@ import {
   getItemsForTabGrouped,
   getTabById,
 } from '../../shared/launchOptions/compose'
-import type { LaunchOptionsModel, GamescopeConfig, EnvPreset, PresetState, Item, GamescopeValue } from '../../shared/launchOptions/compose'
+import type { LaunchOptionsModel, GamescopeConfig, EnvPreset, Item, GamescopeValue } from '../../shared/launchOptions/compose'
 import type { GpuInfo } from '../../shared/types'
 
 // Re-export for backward compat with LaunchOptions route
@@ -877,15 +879,16 @@ function PresetRow({
   const isGlobalOther = state.kind === 'global-other'
   const isLocalOverrides = state.kind === 'local-overrides-global'
   const hasGlobal = (preset.envKey ?? '') in globalEnv
+  const supportsExplicitDisable = envPresetSupportsExplicitDisable(preset)
+  const launcherTri = presetLauncherTriState(model, preset, globalEnv)
+  const explicitOffVal =
+    preset.envKey && preset.envValue != null
+      ? presetEnvOffValue(preset.envKey, preset.envValue)
+      : null
 
   const rowActive = isOn || isGlobalOn || isGlobalOther || isLocalOff
 
   const activeConflictsForRow = !isOn ? findConflicts(model, preset, globalEnv) : []
-
-  const handleToggle = (on: boolean) => {
-    if (locked) return
-    onToggle(preset, on ? 'on' : 'off')
-  }
 
   const handleInherit = () => {
     if (locked) return
@@ -928,7 +931,7 @@ function PresetRow({
 
           {isLocalOff && (
             <Badge variant="outline" className="text-[10px] h-4 px-1 border-destructive/40 text-destructive/80">
-              forced off
+              {hasGlobal ? 'forced off' : 'disabled locally'}
             </Badge>
           )}
 
@@ -1006,7 +1009,15 @@ function PresetRow({
             )}
             {isLocalOff && (
               <p className="text-destructive/80">
-                Forced OFF locally — <code className="font-mono">{preset.envKey}={globalEnv[preset.envKey!] === '1' ? '0' : '1'}</code> is written in your launch options to counter the global setting. Click <strong>Inherit</strong> to remove this override and let the global value apply again.
+                {hasGlobal ? (
+                  <>
+                    Forced OFF locally — <code className="font-mono">{preset.envKey}={explicitOffVal}</code> is written in your launch options to counter the global setting. Click <strong>Inherit</strong> to remove this override and let the global value apply again.
+                  </>
+                ) : (
+                  <>
+                    Disabled locally — <code className="font-mono">{preset.envKey}={explicitOffVal}</code> is set explicitly in launch options so this preset stays off for this game. Click <strong>Unset</strong> to remove it from launch options.
+                  </>
+                )}
               </p>
             )}
             {(isGlobalOther || isLocalOverrides) && (
@@ -1021,47 +1032,82 @@ function PresetRow({
       </div>
 
       <div className="flex flex-col items-end gap-1 mt-0.5">
-        {hasGlobal ? (
-          <TriStateControl
-            state={isOn ? 'on' : isLocalOff ? 'off' : 'inherit'}
-            locked={locked}
-            onOn={() => onToggle(preset, 'on')}
-            onOff={() => onToggle(preset, 'off')}
-            onInherit={handleInherit}
-          />
-        ) : (
-          <Switch
-            checked={isOn}
-            disabled={locked}
-            onCheckedChange={locked ? undefined : (v) => handleToggle(v)}
-          />
-        )}
+        <TriStateControl
+          state={launcherTri === 'enabled' ? 'on' : launcherTri === 'disabled' ? 'off' : 'inherit'}
+          locked={locked}
+          onOn={() => onToggle(preset, 'on')}
+          onOff={() => onToggle(preset, 'off')}
+          onInherit={handleInherit}
+          unsetLabel={hasGlobal ? 'Inherit' : 'Unset'}
+          enableLabel="Enabled"
+          disableLabel="Disabled"
+          unsetTitle={
+            hasGlobal
+              ? 'Remove local override — let user_settings.py apply for this key'
+              : "Do not add this variable to this game's launch options"
+          }
+          enableTitle={`Add ${preset.envKey}=${preset.envValue} to launch options`}
+          disableTitle={
+            supportsExplicitDisable
+              ? hasGlobal
+                ? `Add explicit off value (${preset.envKey}=${explicitOffVal}) to override global`
+                : `Add ${preset.envKey}=${explicitOffVal} to launch options so this preset is explicitly off`
+              : 'This preset has no explicit off value — use Unset to remove it from launch options'
+          }
+          disableOff={!supportsExplicitDisable}
+        />
       </div>
     </div>
   )
 }
 
-// ── Tri-state control (Inherit / On / Off) ────────────────────────────────────
+// ── Tri-state control (Unset|Inherit / Enabled / Disabled) ─────────────────────
 
 function TriStateControl({
-  state, locked, onOn, onOff, onInherit,
+  state,
+  locked,
+  onOn,
+  onOff,
+  onInherit,
+  unsetLabel,
+  enableLabel,
+  disableLabel,
+  unsetTitle,
+  enableTitle,
+  disableTitle,
+  disableOff,
 }: {
   state: 'inherit' | 'on' | 'off'
   locked: boolean
   onOn: () => void
   onOff: () => void
   onInherit: () => void
+  unsetLabel: string
+  enableLabel: string
+  disableLabel: string
+  unsetTitle: string
+  enableTitle: string
+  disableTitle: string
+  disableOff?: boolean
 }) {
-  const btn = (label: string, active: boolean, handler: () => void, title: string) => (
+  const btn = (
+    label: string,
+    active: boolean,
+    handler: () => void,
+    title: string,
+    extraDisabled?: boolean,
+  ) => (
     <button
-      onClick={locked ? undefined : handler}
+      type="button"
+      onClick={locked || extraDisabled ? undefined : handler}
       title={title}
+      disabled={!!locked || !!extraDisabled}
       className={cn(
         'px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors border',
         active
           ? 'bg-primary/20 border-primary/50 text-primary'
           : 'bg-card/40 border-border text-muted-foreground hover:text-foreground hover:bg-muted/40',
-        locked && 'opacity-50 cursor-not-allowed'
+        (locked || extraDisabled) && 'opacity-50 cursor-not-allowed',
       )}
     >
       {label}
@@ -1070,9 +1116,9 @@ function TriStateControl({
 
   return (
     <div className="flex gap-0.5" title={locked ? 'Read-only while Steam is running' : undefined}>
-      {btn('Inherit', state === 'inherit', onInherit, 'Remove local override — let global user_settings.py take effect')}
-      {btn('On', state === 'on', onOn, 'Force ON locally (overrides global)')}
-      {btn('Off', state === 'off', onOff, 'Force OFF locally (overrides global with counter-value)')}
+      {btn(unsetLabel, state === 'inherit', onInherit, unsetTitle)}
+      {btn(enableLabel, state === 'on', onOn, enableTitle)}
+      {btn(disableLabel, state === 'off', onOff, disableTitle, disableOff)}
     </div>
   )
 }
