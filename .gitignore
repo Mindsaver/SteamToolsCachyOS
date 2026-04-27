@@ -28,3 +28,6 @@ dist/
 
 # Large redistributable (obtain from your game/driver install if needed)
 amdxcffx64.dll
+
+# Electron app — local temp / scratch
+app/temp/

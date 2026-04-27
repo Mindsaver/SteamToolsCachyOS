@@ -6,9 +6,11 @@
 
 ## Install
 
-Pick **either** the classic PyInstaller zip installer **or** the Electron **AppImage** installer (same app menu name and `~/.local` paths; re-running one replaces the other).
+Pick **either** the classic PyInstaller zip installer **or** the Electron app from GitHub Releases (same app name; zip vs Electron are separate install trees).
 
-**Zip one-liner** needs **curl**, **python3**, and **unzip**. **AppImage one-liner** needs **curl** and **python3** only. It downloads the `.AppImage`, runs `**--appimage-extract`**, and installs the unpacked app under `~/.local/share/SteamToolsCachyOS/squashfs-root/` so **FUSE is not required** to launch (you run `AppRun`, not the mounted AppImage).
+**Zip one-liner** needs **curl**, **python3**, and **unzip**.
+
+**Electron (recommended on Arch / CachyOS):** use the **pacman** one-liner below — installs the official **`.pacman`** from the latest release under **`/opt`** (same layout as in-app updates). **Alternative:** the **AppImage extract** one-liner needs only **curl** and **python3**, installs under **`~/.local/share`** without **sudo**, and does not need FUSE.
 
 ### One-liner (latest GitHub release — PyInstaller zip)
 
@@ -18,9 +20,19 @@ Downloads the latest [release](https://github.com/Mindsaver/SteamToolsCachyOS/re
 curl -fsSL https://raw.githubusercontent.com/Mindsaver/SteamToolsCachyOS/main/scripts/install-latest-github.sh | bash
 ```
 
-### One-liner (latest GitHub release — Electron AppImage)
+### One-liner (latest GitHub release — Electron, pacman default)
 
-Downloads `SteamToolsCachyOS-Linux-x86_64.AppImage`, **extracts** it, points the menu entry and `~/.local/bin/SteamToolsCachyOS` at `**squashfs-root/AppRun`**. Requires that the **latest** GitHub release includes this AppImage (from the Release Electron workflow). **Running the `.AppImage` file directly** (e.g. double-click from Downloads) still needs **FUSE 2** on many distros; the one-liner avoids that by extracting.
+Downloads **`SteamToolsCachyOS-Linux-x86_64.pacman`** and runs **`sudo pacman -U --needed`**. Needs **curl**, **python3**, **pacman**, and **sudo** (unless you run the pipe as root). Uninstall: **`sudo pacman -Rns steamtoolscachyos`**.
+
+```bash
+curl -fsSL -H "Accept: application/vnd.github.v3.raw" \
+  "https://api.github.com/repos/Mindsaver/SteamToolsCachyOS/contents/scripts/install-latest-pacman-github.sh?ref=main" \
+  | bash
+```
+
+### One-liner (latest GitHub release — Electron, AppImage extract / no sudo)
+
+Downloads `SteamToolsCachyOS-Linux-x86_64.AppImage`, **extracts** it, points the menu entry and `~/.local/bin/SteamToolsCachyOS` at **`squashfs-root/AppRun`**. Needs **curl** and **python3** only. **Running the `.AppImage` file directly** still needs **FUSE 2** on many distros; this path avoids that.
 
 ```bash
 curl -fsSL -H "Accept: application/vnd.github.v3.raw" \
@@ -28,11 +40,11 @@ curl -fsSL -H "Accept: application/vnd.github.v3.raw" \
   | bash
 ```
 
-`raw.githubusercontent.com/.../main/...` is often **CDN-cached** and can lag behind `main` after a push; the **Contents API** URL above tracks `main` immediately. For a **fork**, change `Mindsaver/SteamToolsCachyOS` in that URL (same convention as `STEAMTOOLS_INSTALL_REPO`).
+`raw.githubusercontent.com/.../main/...` is often **CDN-cached** and can lag behind `main` after a push; the **Contents API** URLs above track `main` immediately. For a **fork**, change `Mindsaver/SteamToolsCachyOS` in the URL (same convention as `STEAMTOOLS_INSTALL_REPO`).
 
-Remove later: `~/.local/share/SteamToolsCachyOS/uninstall-github-appimage.sh`.
+**Extract install:** remove later with `bash ~/.local/share/SteamToolsCachyOS/uninstall-github-appimage.sh`.
 
-**In-app updates** for this extracted install download the **`SteamToolsCachyOS-Linux-x86_64.pacman`** asset from GitHub Releases (`electron-builder` produces a `.pacman` package, not `.pkg.tar.zst`) and apply it with **`pacman -U`** when you choose *Restart & install*. Running the `.AppImage` file directly uses the AppImage updater (`APPIMAGE` is set).
+**In-app updates:** the extracted layout uses the same **`.pacman`** asset and **`pacman -U`** when you choose *Restart & install*. A real **`.AppImage`** run sets `APPIMAGE` and uses the AppImage updater path.
 
 For a **fork**, set `STEAMTOOLS_INSTALL_REPO=owner/repo` before piping either one-liner (the in-app updater uses `STEAMTOOLS_UPDATE_REPO` for the same purpose).
 
@@ -51,15 +63,50 @@ Each install includes `**RELEASE_VERSION`** (semver) and `**VERSION`** (line 1: 
 ## Uninstall
 
 - **From an unpacked release or build folder** (same directory as `install.sh`): run `./uninstall.sh` in a terminal.
-- **AppImage one-liner install**: run `~/.local/share/SteamToolsCachyOS/uninstall-github-appimage.sh` (removes `squashfs-root`, menu entry, symlink, and helper files from the script).
-- **After a normal zip install** (you no longer have the zip folder): run the copy kept with the app:
+- **AppImage one-liner install**: the installer writes `uninstall-github-appimage.sh` under the app data directory. Run it with **bash** (required in **fish**; a bare path can show “Unknown command”):
   ```bash
-  ~/.local/share/SteamToolsCachyOS/uninstall.sh
+  bash ~/.local/share/SteamToolsCachyOS/uninstall-github-appimage.sh
   ```
+- **After a normal zip install** (you no longer have the zip folder):
+  ```bash
+  bash ~/.local/share/SteamToolsCachyOS/uninstall.sh
+  ```
+  If those files are missing, see **Manual removal** below.
 
 The uninstall script removes the application menu entry (`.desktop` under `~/.local/share/applications`), the `~/.local/bin/SteamToolsCachyOS` symlink, and the install directory `~/.local/share/SteamToolsCachyOS`. It also cleans up a **legacy** install under the old **Symlink-Steam** paths if one is still present.
 
 If you **only ever ran** `./SteamToolsCachyOS` from an unpacked folder and never ran `install.sh`, there may be nothing under `~/.local` to remove — delete that unpacked folder yourself when you are done.
+
+### Manual removal (Electron curl install, no script)
+
+If `uninstall-github-appimage.sh` was never created or fails, remove the same paths the script would:
+
+```bash
+rm -rf ~/.local/share/SteamToolsCachyOS/squashfs-root
+rm -f ~/.local/share/applications/SteamToolsCachyOS.desktop \
+      ~/.local/bin/SteamToolsCachyOS \
+      ~/.local/share/SteamToolsCachyOS/uninstall-github-appimage.sh \
+      ~/.local/share/SteamToolsCachyOS/symlink-steam-logo.png \
+      ~/.local/share/SteamToolsCachyOS/SteamToolsCachyOS.AppImage
+```
+
+Then optionally refresh the application menu: `update-desktop-database ~/.local/share/applications 2>/dev/null`.  
+You can delete the whole folder `rm -rf ~/.local/share/SteamToolsCachyOS` if nothing else there is needed.
+
+### Installed under `/opt` (pacman `.pkg.tar.*` / `.pacman` from GitHub)
+
+If the binary lives at **`/opt/SteamToolsCachyOS/`**, you likely installed with **`pacman`** (not the curl installer above). Then **`~/.local/share/SteamToolsCachyOS/` may not exist** — that path is only for the extracted AppImage curl install.
+
+Remove the package with pacman (find the exact name first):
+
+```bash
+pacman -Qs steamtools
+sudo pacman -Rns steamtoolscachyos
+```
+
+Use whatever name `pacman -Qs` shows (sometimes `SteamToolsCachyOS` depending on packaging). Pacman removes `/opt/...`, menu entries under `/usr/share/applications`, and tracked files.
+
+If it was copied to `/opt` by hand with no package, delete that directory and any `/usr/share/applications/*SteamTools*` desktop file yourself (and `sudo update-desktop-database` / log out if the menu entry lingers).
 
 ---
 
@@ -67,7 +114,7 @@ If you **only ever ran** `./SteamToolsCachyOS` from an unpacked folder and never
 
 - **Menu**: **Help → Check for updates…** compares your semver to the [latest GitHub release](https://api.github.com/repos/Mindsaver/SteamToolsCachyOS/releases/latest), can download the same zip, and re-runs `install.sh`. After updating, **restart** the app so the new binary loads.
 - **Automatic check**: when you start the **installed** app, it compares your version to GitHub’s latest release. **Release installs** (semver without a local `+dev` / `0.0.0+…` dev line from `./build`) use a **1-hour** throttle (timestamp under `$XDG_CACHE_HOME/SteamToolsCachyOS/last_update_check`). **Direct / local builds** skip that throttle so every launch hits GitHub. **Help → Check for updates** always hits GitHub immediately. To skip the automatic check entirely: `**STEAMTOOLS_NO_AUTO_UPDATE=1`**. To throttle a dev build too: `**STEAMTOOLS_AUTO_CHECK_THROTTLE=1**`. To turn throttling off for a release install: `**STEAMTOOLS_AUTO_CHECK_THROTTLE=0**`. Gap override: `**STEAMTOOLS_AUTO_CHECK_INTERVAL_HOURS**` (float; minimum 5 minutes). `**STEAMTOOLS_FORCE_UPDATE_CHECK=1**` runs the startup check once even inside the throttle window.
-- **Outside the app**: run the [one-liner](#one-liner-latest-github-release) again, or unpack a newer zip and run `./install.sh`.
+- **Outside the app**: run the Electron **pacman** or **AppImage extract** one-liner from [Install](#install) again, or unpack a newer zip and run `./install.sh`.
 
 ---
 
