@@ -8,7 +8,7 @@
 
 Pick **either** the classic PyInstaller zip installer **or** the Electron **AppImage** installer (same app menu name and `~/.local` paths; re-running one replaces the other).
 
-**Zip one-liner** needs **curl**, **python3**, and **unzip**. **AppImage one-liner** needs **curl** and **python3** only; running the AppImage itself still needs **FUSE 2** (`libfuse.so.2`), e.g. **`fuse2`** on Arch/CachyOS or **`libfuse2`** on Debian/Ubuntu.
+**Zip one-liner** needs **curl**, **python3**, and **unzip**. **AppImage one-liner** needs **curl** and **python3** only. It downloads the `.AppImage`, runs **`--appimage-extract`**, and installs the unpacked app under `~/.local/share/SteamToolsCachyOS/squashfs-root/` so **FUSE is not required** to launch (you run `AppRun`, not the mounted AppImage).
 
 ### One-liner (latest GitHub release — PyInstaller zip)
 
@@ -20,7 +20,7 @@ curl -fsSL https://raw.githubusercontent.com/Mindsaver/SteamToolsCachyOS/main/sc
 
 ### One-liner (latest GitHub release — Electron AppImage)
 
-Downloads asset `SteamToolsCachyOS-Linux-x86_64.AppImage`, installs it under `~/.local/share/SteamToolsCachyOS/`, registers the menu entry, and symlinks `~/.local/bin/SteamToolsCachyOS`. Requires that the **latest** GitHub release includes this AppImage (from the Release Electron workflow).
+Downloads `SteamToolsCachyOS-Linux-x86_64.AppImage`, **extracts** it, points the menu entry and `~/.local/bin/SteamToolsCachyOS` at **`squashfs-root/AppRun`**. Requires that the **latest** GitHub release includes this AppImage (from the Release Electron workflow). **Running the `.AppImage` file directly** (e.g. double-click from Downloads) still needs **FUSE 2** on many distros; the one-liner avoids that by extracting.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Mindsaver/SteamToolsCachyOS/main/scripts/install-latest-appimage-github.sh | bash
@@ -45,7 +45,7 @@ Each install includes `**RELEASE_VERSION`** (semver) and `**VERSION`** (line 1: 
 ## Uninstall
 
 - **From an unpacked release or build folder** (same directory as `install.sh`): run `./uninstall.sh` in a terminal.
-- **AppImage one-liner install**: run `~/.local/share/SteamToolsCachyOS/uninstall-github-appimage.sh` (removes that AppImage install’s menu entry, symlink, and files from the script).
+- **AppImage one-liner install**: run `~/.local/share/SteamToolsCachyOS/uninstall-github-appimage.sh` (removes `squashfs-root`, menu entry, symlink, and helper files from the script).
 - **After a normal zip install** (you no longer have the zip folder): run the copy kept with the app:
   ```bash
   ~/.local/share/SteamToolsCachyOS/uninstall.sh

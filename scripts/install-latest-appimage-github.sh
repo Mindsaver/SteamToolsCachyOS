@@ -1,77 +1,9 @@
 #!/usr/bin/env bash
-# Download the latest GitHub release AppImage for SteamToolsCachyOS (Electron build), install under ~/.local/share.
-# Requires: curl, python3. AppImages need libfuse.so.2 (FUSE 2); this script tries to install it via sudo when missing.
-# Set STEAMTOOLS_SKIP_FUSE_INSTALL=1 to skip that step (CI / containers).
+# Download the latest GitHub release AppImage for SteamToolsCachyOS (Electron build), extract it, install under ~/.local/share.
+# Extraction uses --appimage-extract so FUSE (libfuse.so.2) is NOT required to run the app.
+# Requires: curl, python3.
 # Usage: curl -fsSL https://raw.githubusercontent.com/Mindsaver/SteamToolsCachyOS/main/scripts/install-latest-appimage-github.sh | bash
 set -euo pipefail
-
-fuse2_present() {
-  ldconfig -p 2>/dev/null | grep -qF 'libfuse.so.2' && return 0
-  [[ -f /usr/lib/libfuse.so.2 ]] && return 0
-  [[ -f /usr/lib64/libfuse.so.2 ]] && return 0
-  return 1
-}
-
-install_fuse2_if_needed() {
-  fuse2_present && return 0
-  if [[ "${STEAMTOOLS_SKIP_FUSE_INSTALL:-}" == "1" ]]; then
-    echo "Skipping FUSE 2 install (STEAMTOOLS_SKIP_FUSE_INSTALL=1)." >&2
-    return 0
-  fi
-  if ! command -v sudo >/dev/null 2>&1; then
-    echo "Note: libfuse.so.2 not found and sudo is unavailable; install FUSE 2 manually to run the AppImage." >&2
-    return 0
-  fi
-  ID=""
-  ID_LIKE=""
-  if [[ -r /etc/os-release ]]; then
-    # shellcheck source=/dev/null
-    . /etc/os-release
-  fi
-  echo "AppImage needs FUSE 2 (libfuse.so.2). Installing package with sudo…"
-  set +e
-  case "${ID:-}" in
-    arch|cachyos|endeavouros|manjaro|garuda)
-      sudo pacman -S --needed --noconfirm fuse2
-      ;;
-    ubuntu|debian|linuxmint|pop|zorin|elementary)
-      sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libfuse2
-      ;;
-    fedora|rhel|centos|rocky|almalinux)
-      sudo dnf install -y fuse-libs 2>/dev/null || sudo dnf install -y fuse
-      ;;
-    opensuse-tumbleweed|opensuse-leap|opensuse)
-      sudo zypper install -y libfuse2 2>/dev/null || sudo zypper install -y fuse
-      ;;
-    alpine)
-      sudo apk add --no-cache fuse
-      ;;
-    void)
-      sudo xbps-install -Sy fuse
-      ;;
-    *)
-      if [[ "${ID_LIKE:-}" == *arch* ]]; then
-        sudo pacman -S --needed --noconfirm fuse2
-      elif [[ "${ID_LIKE:-}" == *debian* ]] || [[ "${ID_LIKE:-}" == *ubuntu* ]]; then
-        sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libfuse2
-      elif [[ "${ID_LIKE:-}" == *fedora* ]] || [[ "${ID_LIKE:-}" == *rhel* ]]; then
-        sudo dnf install -y fuse-libs 2>/dev/null || sudo dnf install -y fuse
-      else
-        echo "Could not detect your distro for automatic FUSE 2 install (${ID:-unknown}). Install libfuse.so.2 manually." >&2
-        set -e
-        return 0
-      fi
-      ;;
-  esac
-  rc=$?
-  set -e
-  if [[ "$rc" -eq 0 ]] && fuse2_present; then
-    echo "FUSE 2 is installed; the AppImage should run without libfuse.so.2 errors."
-    return 0
-  fi
-  echo "Automatic FUSE install did not succeed (wrong password, unsupported distro, or package rename)." >&2
-  echo "Install manually, e.g. Arch/CachyOS: sudo pacman -S fuse2   Debian/Ubuntu: sudo apt install libfuse2" >&2
-}
 
 DEFAULT_OWNER="Mindsaver"
 DEFAULT_REPO="SteamToolsCachyOS"
@@ -131,7 +63,8 @@ echo "Release: ${RELEASE_TAG:-unknown}"
 echo "Downloading: $ASSET_NAME"
 
 PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/SteamToolsCachyOS"
-APPIMAGE="$PREFIX/SteamToolsCachyOS.AppImage"
+EXTRACT_ROOT="$PREFIX/squashfs-root"
+APPRUN="$EXTRACT_ROOT/AppRun"
 APP_DESKTOP="${XDG_DATA_HOME:-$HOME/.local/share}/applications/SteamToolsCachyOS.desktop"
 BIN_LINK="${HOME}/.local/bin/SteamToolsCachyOS"
 ICON_PATH="$PREFIX/symlink-steam-logo.png"
@@ -145,12 +78,26 @@ DL_PATH="$WORKDIR/$ASSET_NAME"
 curl -fSL -o "$DL_PATH" "$ASSET_URL"
 chmod +x "$DL_PATH"
 
+echo "Extracting AppImage (no FUSE required)…"
+(
+  cd "$WORKDIR"
+  "./$ASSET_NAME" --appimage-extract
+)
+if [[ ! -x "$WORKDIR/squashfs-root/AppRun" ]]; then
+  echo "Extract failed: $WORKDIR/squashfs-root/AppRun missing or not executable." >&2
+  exit 1
+fi
+
 mkdir -p "$PREFIX"
 mkdir -p "$(dirname "$APP_DESKTOP")"
 mkdir -p "$(dirname "$BIN_LINK")"
 
-mv -f "$DL_PATH" "$APPIMAGE"
-chmod +x "$APPIMAGE"
+rm -rf "$EXTRACT_ROOT"
+mv "$WORKDIR/squashfs-root" "$EXTRACT_ROOT"
+chmod +x "$APPRUN"
+
+# Legacy single-file install; remove if present.
+rm -f "$PREFIX/SteamToolsCachyOS.AppImage"
 
 if curl -fsSL -o "$ICON_PATH.part" "$ICON_URL" && mv -f "$ICON_PATH.part" "$ICON_PATH"; then
   :
@@ -169,30 +116,30 @@ umask 077
   printf '%s\n' 'Categories=Utility;Game;'
   printf '%s\n' 'Terminal=false'
   printf '%s\n' 'StartupNotify=true'
-  printf 'TryExec=%s\n' "$APPIMAGE"
-  printf 'Exec=%s %%u\n' "$APPIMAGE"
+  printf 'TryExec=%s\n' "$APPRUN"
+  printf 'Exec=%s %%u\n' "$APPRUN"
   if [[ -n "$ICON_PATH" ]]; then
     printf 'Icon=%s\n' "$ICON_PATH"
   fi
 } >"$APP_DESKTOP"
 echo "Wrote: $APP_DESKTOP"
 
-ln -sf "$APPIMAGE" "$BIN_LINK"
-echo "Bin link: $BIN_LINK -> $APPIMAGE"
+ln -sf "$APPRUN" "$BIN_LINK"
+echo "Bin link: $BIN_LINK -> $APPRUN"
 
 cat >"$UNINSTALL_SCRIPT" <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
 PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/SteamToolsCachyOS"
-APPIMAGE="$PREFIX/SteamToolsCachyOS.AppImage"
 APP_DESKTOP="${XDG_DATA_HOME:-$HOME/.local/share}/applications/SteamToolsCachyOS.desktop"
 BIN_LINK="${HOME}/.local/bin/SteamToolsCachyOS"
 SELF="$PREFIX/uninstall-github-appimage.sh"
-rm -f "$APPIMAGE" "$PREFIX/symlink-steam-logo.png" "$APP_DESKTOP" "$BIN_LINK" "$SELF"
+rm -rf "$PREFIX/squashfs-root"
+rm -f "$PREFIX/SteamToolsCachyOS.AppImage" "$PREFIX/symlink-steam-logo.png" "$APP_DESKTOP" "$BIN_LINK" "$SELF"
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$(dirname "$APP_DESKTOP")" 2>/dev/null || true
 fi
-echo "Removed AppImage install (desktop entry, ~/.local/bin symlink, and AppImage files)."
+echo "Removed extracted AppImage install (squashfs-root, desktop entry, symlink)."
 EOS
 chmod +x "$UNINSTALL_SCRIPT"
 echo "Uninstall later: $UNINSTALL_SCRIPT"
@@ -201,15 +148,7 @@ if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$(dirname "$APP_DESKTOP")" 2>/dev/null || true
 fi
 
-install_fuse2_if_needed
-
 echo ""
-echo "SteamToolsCachyOS (AppImage) is installed."
-echo "  Application: $APPIMAGE"
+echo "SteamToolsCachyOS is installed (extracted AppImage; does not require FUSE)."
+echo "  Application: $APPRUN"
 echo "  Menu: search for SteamToolsCachyOS, or run: $BIN_LINK"
-if ! fuse2_present; then
-  echo ""
-  echo "If launching fails with \"libfuse.so.2\", install FUSE 2 manually, e.g.:"
-  echo "  Arch / CachyOS: sudo pacman -S fuse2"
-  echo "  Debian / Ubuntu: sudo apt install libfuse2"
-fi
