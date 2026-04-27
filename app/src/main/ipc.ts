@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell, BrowserWindow } from 'electron'
+import { app, ipcMain, dialog, shell, BrowserWindow } from 'electron'
 import path from 'path'
 import os from 'os'
 import { IPC } from '../shared/ipc-channels'
@@ -19,7 +19,12 @@ import { detectGpuVendors } from './services/gpu/detect'
 import { transformLaunchOptions } from '../shared/launchOptions/compose'
 import { loadSettings, saveSettings } from './services/settings'
 import { checkForUpdates, downloadUpdate, installUpdate } from './services/updater'
-import type { SymlinkHubOptions, BatchTransformPreviewRequest, BatchTransformApplyRequest } from '../shared/types'
+import type {
+  AppAboutInfo,
+  SymlinkHubOptions,
+  BatchTransformPreviewRequest,
+  BatchTransformApplyRequest,
+} from '../shared/types'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // ── Steam ──────────────────────────────────────────────────────────────────
@@ -257,6 +262,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return { ok: true }
   })
 
+  ipcMain.handle(IPC.APP_GET_ABOUT, (): AppAboutInfo => ({
+    name: app.getName(),
+    version: app.getVersion(),
+  }))
+
   // ── Updates ────────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC.UPDATE_CHECK, () => checkForUpdates())
@@ -282,5 +292,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(IPC.SHELL_OPEN_PATH, async (_e, targetPath: string) => {
     await shell.openPath(targetPath)
+  })
+
+  ipcMain.handle(IPC.SHELL_OPEN_EXTERNAL, async (_e, url: string) => {
+    await shell.openExternal(url)
   })
 }

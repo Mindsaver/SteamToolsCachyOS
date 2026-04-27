@@ -4,6 +4,7 @@ import { registerIpcHandlers } from './ipc'
 import { initUpdater, checkForUpdates } from './services/updater'
 import { loadSettings } from './services/settings'
 import { ensureDesktopEntry } from './services/desktopEntry'
+import { IPC } from '../shared/ipc-channels'
 
 // Single instance lock
 if (!app.requestSingleInstanceLock()) {
@@ -89,7 +90,7 @@ function buildMenu(win: BrowserWindow): void {
         {
           label: 'About SteamToolsCachyOS',
           click: () => {
-            win.webContents.send('show-about')
+            win.webContents.send(IPC.ABOUT_SHOW)
           },
         },
       ],

@@ -1,5 +1,11 @@
 // Shared types used across main process, preload, and renderer
 
+/** From Electron app.getName() / app.getVersion() — version matches packaged release (package.json). */
+export interface AppAboutInfo {
+  name: string
+  version: string
+}
+
 export interface InstalledGame {
   appId: number
   name: string

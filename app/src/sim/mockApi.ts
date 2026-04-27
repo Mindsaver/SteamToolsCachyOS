@@ -4,8 +4,12 @@
  * so the renderer gets realistic fake data in a real Electron window.
  */
 
+import { ipcRenderer } from 'electron'
+import { IPC } from '../shared/ipc-channels'
 import type {
-  AppSettings, SymlinkHubOptions,
+  AppAboutInfo,
+  AppSettings,
+  SymlinkHubOptions,
   SteamAccount, BatchTransformPreviewRequest, BatchTransformApplyRequest,
   BatchTransformResult, RestoreBackupResult,
 } from '../shared/types'
@@ -42,6 +46,17 @@ const fsrCh = makeChannel<(p: import('../shared/types').SymlinkProgress) => void
 const updateAvailCh = makeChannel<(i: { version: string }) => void>()
 const updateDoneCh = makeChannel<(i: { version: string }) => void>()
 const updateProgCh = makeChannel<(i: { percent: number }) => void>()
+function makeVoidListeners() {
+  const listeners = new Set<() => void>()
+  const emit = () => listeners.forEach((cb) => cb())
+  const on = (cb: () => void) => {
+    listeners.add(cb)
+    return () => listeners.delete(cb)
+  }
+  return { emit, on }
+}
+const updateNotAvailCh = makeVoidListeners()
+const updateErrCh = makeChannel<(i: { message: string }) => void>()
 
 export const mockApi = {
   __simMode: true as const,
@@ -144,6 +159,8 @@ export const mockApi = {
   onUpdateAvailable: updateAvailCh.on,
   onUpdateDownloaded: updateDoneCh.on,
   onUpdateProgress: updateProgCh.on,
+  onUpdateNotAvailable: updateNotAvailCh.on,
+  onUpdateError: updateErrCh.on,
 
   // ── Dialogs & shell ────────────────────────────────────────────────────────
   openFileDialog: async (_filters?: unknown) => {
@@ -152,4 +169,15 @@ export const mockApi = {
   },
   openDirDialog: async () => { await delay(300); return '/home/arch/SteamToolsCachyOS' },
   openPath: async (_p: string) => { /* no-op */ },
+
+  getAboutInfo: async (): Promise<AppAboutInfo> => ({
+    name: 'SteamToolsCachyOS',
+    version: '0.0.0-sim',
+  }),
+  onShowAbout: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on(IPC.ABOUT_SHOW, handler)
+    return () => ipcRenderer.removeListener(IPC.ABOUT_SHOW, handler)
+  },
+  openExternalUrl: async (_url: string) => { /* no-op in sim */ },
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { Download, RefreshCw, X } from 'lucide-react'
 import { Button } from './ui/button'
 import { Progress } from './ui/progress'
@@ -25,7 +26,12 @@ export function UpdateBanner() {
 
   useEffect(() => {
     const offAvail = api.onUpdateAvailable((info) => {
-      setState((s) => ({ ...s, available: true, version: info.version }))
+      setState((s) => ({
+        ...s,
+        available: true,
+        version: info.version,
+        dismissed: false,
+      }))
     })
     const offDone = api.onUpdateDownloaded((info) => {
       setState((s) => ({ ...s, downloaded: true, downloading: false, version: info.version }))
@@ -37,6 +43,24 @@ export function UpdateBanner() {
       offAvail()
       offDone()
       offProgress()
+    }
+  }, [])
+
+  useEffect(() => {
+    const offNa = api.onUpdateNotAvailable(async () => {
+      try {
+        const { version } = await api.getAboutInfo()
+        toast.success(`You're up to date (v${version}).`)
+      } catch {
+        toast.success("You're up to date.")
+      }
+    })
+    const offErr = api.onUpdateError(({ message }) => {
+      toast.error(message || 'Update check failed.')
+    })
+    return () => {
+      offNa()
+      offErr()
     }
   }, [])
 

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import type {
+  AppAboutInfo,
   AppSettings,
   SymlinkHubOptions,
   SymlinkProgress,
@@ -82,11 +83,29 @@ const realApi = {
     ipcRenderer.on(IPC.UPDATE_PROGRESS, handler)
     return () => ipcRenderer.removeListener(IPC.UPDATE_PROGRESS, handler)
   },
+  onUpdateNotAvailable: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on(IPC.UPDATE_NOT_AVAILABLE, handler)
+    return () => ipcRenderer.removeListener(IPC.UPDATE_NOT_AVAILABLE, handler)
+  },
+  onUpdateError: (cb: (info: { message: string }) => void) => {
+    const handler = (_: unknown, info: { message: string }) => cb(info)
+    ipcRenderer.on(IPC.UPDATE_ERROR, handler)
+    return () => ipcRenderer.removeListener(IPC.UPDATE_ERROR, handler)
+  },
 
   openFileDialog: (filters?: Electron.FileFilter[]) =>
     ipcRenderer.invoke(IPC.DIALOG_OPEN_FILE, { filters }),
   openDirDialog: () => ipcRenderer.invoke(IPC.DIALOG_OPEN_DIR),
   openPath: (p: string) => ipcRenderer.invoke(IPC.SHELL_OPEN_PATH, p),
+
+  getAboutInfo: (): Promise<AppAboutInfo> => ipcRenderer.invoke(IPC.APP_GET_ABOUT),
+  onShowAbout: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on(IPC.ABOUT_SHOW, handler)
+    return () => ipcRenderer.removeListener(IPC.ABOUT_SHOW, handler)
+  },
+  openExternalUrl: (url: string) => ipcRenderer.invoke(IPC.SHELL_OPEN_EXTERNAL, url),
 }
 
 export type Api = typeof realApi

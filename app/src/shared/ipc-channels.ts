@@ -38,6 +38,10 @@ export const IPC = {
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
 
+  // About / app metadata (Help menu)
+  APP_GET_ABOUT: 'app:get-about',
+  ABOUT_SHOW: 'about:show',
+
   // Updates
   UPDATE_CHECK: 'update:check',
   UPDATE_DOWNLOAD: 'update:download',
@@ -52,6 +56,7 @@ export const IPC = {
   DIALOG_OPEN_FILE: 'dialog:open-file',
   DIALOG_OPEN_DIR: 'dialog:open-dir',
   SHELL_OPEN_PATH: 'shell:open-path',
+  SHELL_OPEN_EXTERNAL: 'shell:open-external',
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

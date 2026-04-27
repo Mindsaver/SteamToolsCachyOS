@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import { LayoutDashboard, FolderSymlink, Cpu, Gamepad2, Settings as SettingsIcon } from 'lucide-react'
 import { Toaster } from 'sonner'
@@ -10,6 +10,8 @@ import { SymlinkHub } from './routes/SymlinkHub'
 import { FsrDll } from './routes/FsrDll'
 import { LaunchOptions } from './routes/LaunchOptions'
 import { Settings } from './routes/Settings'
+import { AboutDialog } from './components/AboutDialog'
+import { api } from './lib/ipc'
 
 // Sim mode is set by the preload at build time via contextBridge.
 // window.api.__simMode is true when launched with dev:sim.
@@ -23,6 +25,12 @@ const NAV_ITEMS = [
 ]
 
 export default function App() {
+  const [aboutOpen, setAboutOpen] = useState(false)
+
+  useEffect(() => {
+    return api.onShowAbout(() => setAboutOpen(true))
+  }, [])
+
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
       {/* Sidebar */}
@@ -109,6 +117,8 @@ export default function App() {
           </Routes>
         </main>
       </div>
+
+      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
 
       <Toaster
         position="bottom-right"
