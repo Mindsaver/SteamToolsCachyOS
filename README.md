@@ -112,6 +112,30 @@ Workflow `[.github/workflows/release.yml](.github/workflows/release.yml)`:
 
 Maintainers can still publish manually: build locally, zip `dist/`, attach `**SteamToolsCachyOS-Linux-x86_64.zip`** so the curl installer and in-app updater keep working.
 
+### Electron app and electron-builder 26 (Linux)
+
+The Electron UI lives under [`app/`](app/). CI builds **AppImage** and **pacman** via [`.github/workflows/release-electron.yml`](.github/workflows/release-electron.yml) (`working-directory: app`, then `npx electron-builder --linux AppImage pacman --publish never`).
+
+**Local packaging** (from repo root):
+
+```bash
+cd app
+npm ci
+npm run build
+npx electron-builder --linux AppImage pacman --publish never
+```
+
+Artifacts land in `app/dist/` (for example `*.AppImage`, `*.pkg.tar.zst`, `latest-linux.yml` for electron-updater).
+
+**electron-builder 26.x** validates [`app/electron-builder.yml`](app/electron-builder.yml) against a strict schema. If you edit that file, keep the following in mind:
+
+| Topic | What to use |
+|--------|----------------|
+| **Linux targets** | Put targets under `linux.target`, not a root-level `targets` key. See [Linux configuration](https://www.electron.build/linux). |
+| **`.desktop` metadata** | Custom `[Desktop Entry]` keys (`Name`, `Comment`, `Categories`, `Keywords`, …) belong under `linux.desktop.entry`. The `linux.desktop` object only allows `entry` and `desktopActions`. See [LinuxDesktopFile](https://www.electron.build/app-builder-lib.interface.linuxdesktopfile). |
+| **AppImage license file** | Paths are resolved from `app/` and `app/resources/`. The MIT `LICENSE` at the **repository root** is referenced as `../LICENSE` from `app/electron-builder.yml`. |
+| **Pacman / FPM** | FPM-based targets need a project **homepage**, **author** with an **email**, and a Linux **maintainer**. The YAML sets these via `extraMetadata` and `linux.maintainer`; replace the GitHub `users.noreply.github.com` placeholder with a real address if you prefer. |
+
 ### Tests
 
 In your dev venv (not required for the packaged app):
@@ -125,6 +149,7 @@ Includes `[tests/test_launch_options_compose.py](tests/test_launch_options_compo
 
 ### Repository layout
 
+- `**app/**` — Electron + Vite desktop app (`npm run build`, `electron-builder` Linux packages)
 - `**scripts/**` — UI entrypoint, Steam/VDF helpers, symlink backend shell script, install/uninstall scripts
 - `**assets/**` — Icons (`symlink-steam-logo.png`) and desktop entry templates
 - `**tests/**` — Pytest suite

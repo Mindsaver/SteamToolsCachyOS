@@ -2,6 +2,12 @@ appId: com.mindsaver.steamtoolscachyos
 productName: SteamToolsCachyOS
 copyright: Copyright © 2024 Mindsaver
 
+extraMetadata:
+  homepage: https://github.com/Mindsaver/SteamToolsCachyOS
+  author:
+    name: Mindsaver
+    email: Mindsaver@users.noreply.github.com
+
 directories:
   buildResources: resources
   output: dist
@@ -13,17 +19,24 @@ files:
 linux:
   icon: resources/icons
   category: Utility
+  maintainer: Mindsaver <Mindsaver@users.noreply.github.com>
   description: Steam toolkit for CachyOS and other Linux distros
   desktop:
-    Name: SteamToolsCachyOS
-    Comment: Steam symlink hub, FSR DLL helper, launch options manager
-    Categories: Utility;Game;
-    Keywords: Steam;CachyOS;FSR;Proton;Gaming;
+    entry:
+      Name: SteamToolsCachyOS
+      Comment: Steam symlink hub, FSR DLL helper, launch options manager
+      Categories: Utility;Game;
+      Keywords: Steam;CachyOS;FSR;Proton;Gaming;
   executableName: SteamToolsCachyOS
   artifactName: SteamToolsCachyOS-Linux-x86_64.${ext}
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: pacman
+      arch: [x64]
 
 appImage:
-  license: LICENSE
+  license: ../LICENSE
 
 pacman:
   fpm:
@@ -34,11 +47,3 @@ publish:
   owner: Mindsaver
   repo: SteamToolsCachyOS
   releaseType: release
-
-targets:
-  linux:
-    target:
-      - target: AppImage
-        arch: [x64]
-      - target: pacman
-        arch: [x64]
