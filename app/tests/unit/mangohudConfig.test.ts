@@ -42,6 +42,24 @@ fps
     ])
   })
 
+  it('keeps comma-separated threshold/color lists intact', () => {
+    const parsed = parseMangoHudConfigText(`
+fps_value=30,60
+fps_color=cc0000,ffaa7f,92e79a
+gpu_load_value=60,90
+gpu_load_color=92e79a,ffaa7f,cc0000
+`)
+    expect(parsed.entries).toEqual([
+      { key: 'fps_value', value: '30,60' },
+      { key: 'fps_color', value: 'cc0000,ffaa7f,92e79a' },
+      { key: 'gpu_load_value', value: '60,90' },
+      { key: 'gpu_load_color', value: '92e79a,ffaa7f,cc0000' },
+    ])
+    const text = serializeMangoHudEntries(parsed.entries)
+    expect(text).toContain('fps_value=30,60')
+    expect(text).toContain('fps_color=cc0000,ffaa7f,92e79a')
+  })
+
   it('serializes entries to mangohud format', () => {
     const text = serializeMangoHudEntries([
       { key: 'fps', value: '1' },

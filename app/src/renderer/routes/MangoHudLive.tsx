@@ -12,11 +12,15 @@ import { parseMangoHudConfigText, mergeMangoHudEntry, serializeMangoHudEntries }
 import type { MangoHudConfigEntry, MangoHudRuntimeTextStyle, RunningFsrStatus } from '../../shared/types'
 
 type FieldType = 'boolean' | 'number' | 'string' | 'list' | 'color' | 'select'
+type ListKind = 'color-list' | 'number-list' | 'string-list'
 interface CatalogItem {
   key: string
   label: string
   section: string
   type: FieldType
+  listKind?: ListKind
+  pairWith?: string
+  pairRole?: 'threshold' | 'color'
   options?: string[]
   min?: number
   max?: number
@@ -60,8 +64,25 @@ const CATALOG: CatalogItem[] = [
   { section: 'Overlay', key: 'histogram', label: 'Histogram', type: 'boolean' },
   { section: 'Overlay', key: 'fps_only', label: 'FPS only', type: 'boolean' },
   { section: 'Overlay', key: 'fps_color_change', label: 'FPS color change', type: 'boolean' },
-  { section: 'Overlay', key: 'fps_value', label: 'FPS thresholds', type: 'list' },
-  { section: 'Overlay', key: 'fps_color', label: 'FPS colors', type: 'list' },
+  {
+    section: 'Overlay',
+    key: 'fps_value',
+    label: 'FPS thresholds',
+    type: 'list',
+    listKind: 'number-list',
+    pairWith: 'fps_color',
+    pairRole: 'threshold',
+    help: 'Nth threshold uses Nth color.',
+  },
+  {
+    section: 'Overlay',
+    key: 'fps_color',
+    label: 'FPS colors',
+    type: 'list',
+    listKind: 'color-list',
+    pairWith: 'fps_value',
+    pairRole: 'color',
+  },
   { section: 'Overlay', key: 'frametime_color', label: 'Frame time color', type: 'color' },
   { section: 'Overlay', key: 'frame_count', label: 'Frame count', type: 'boolean' },
   { section: 'Overlay', key: 'toggle_hud', label: 'Toggle HUD hotkey', type: 'string' },
@@ -78,8 +99,25 @@ const CATALOG: CatalogItem[] = [
   { section: 'GPU', key: 'gpu_name', label: 'GPU name', type: 'boolean' },
   { section: 'GPU', key: 'gpu_junction_temp', label: 'GPU junction temp', type: 'boolean' },
   { section: 'GPU', key: 'gpu_fan', label: 'GPU fan', type: 'boolean' },
-  { section: 'GPU', key: 'gpu_load_value', label: 'GPU load thresholds', type: 'list' },
-  { section: 'GPU', key: 'gpu_load_color', label: 'GPU load colors', type: 'list' },
+  {
+    section: 'GPU',
+    key: 'gpu_load_value',
+    label: 'GPU load thresholds',
+    type: 'list',
+    listKind: 'number-list',
+    pairWith: 'gpu_load_color',
+    pairRole: 'threshold',
+    help: 'Nth threshold uses Nth color.',
+  },
+  {
+    section: 'GPU',
+    key: 'gpu_load_color',
+    label: 'GPU load colors',
+    type: 'list',
+    listKind: 'color-list',
+    pairWith: 'gpu_load_value',
+    pairRole: 'color',
+  },
   { section: 'GPU', key: 'gpu_text', label: 'GPU label', type: 'string' },
   { section: 'GPU', key: 'gpu_color', label: 'GPU label color', type: 'color' },
 
@@ -90,8 +128,25 @@ const CATALOG: CatalogItem[] = [
   { section: 'CPU', key: 'cpu_load_change', label: 'CPU load change', type: 'boolean' },
   { section: 'CPU', key: 'core_load', label: 'Per-core load', type: 'boolean' },
   { section: 'CPU', key: 'core_bars', label: 'Core bars', type: 'boolean' },
-  { section: 'CPU', key: 'cpu_load_value', label: 'CPU load thresholds', type: 'list' },
-  { section: 'CPU', key: 'cpu_load_color', label: 'CPU load colors', type: 'list' },
+  {
+    section: 'CPU',
+    key: 'cpu_load_value',
+    label: 'CPU load thresholds',
+    type: 'list',
+    listKind: 'number-list',
+    pairWith: 'cpu_load_color',
+    pairRole: 'threshold',
+    help: 'Nth threshold uses Nth color.',
+  },
+  {
+    section: 'CPU',
+    key: 'cpu_load_color',
+    label: 'CPU load colors',
+    type: 'list',
+    listKind: 'color-list',
+    pairWith: 'cpu_load_value',
+    pairRole: 'color',
+  },
   { section: 'CPU', key: 'cpu_text', label: 'CPU label', type: 'string' },
   { section: 'CPU', key: 'cpu_color', label: 'CPU label color', type: 'color' },
 
@@ -102,7 +157,7 @@ const CATALOG: CatalogItem[] = [
   { section: 'Memory', key: 'vram_color', label: 'VRAM color', type: 'color' },
   { section: 'Memory', key: 'wine_color', label: 'Wine color', type: 'color' },
 
-  { section: 'Frames', key: 'fps_limit', label: 'FPS limit', type: 'list' },
+  { section: 'Frames', key: 'fps_limit', label: 'FPS limit', type: 'list', listKind: 'number-list' },
   {
     section: 'Frames',
     key: 'fps_limit_method',
@@ -173,6 +228,24 @@ function toColorHex(value: string): string {
   const cleaned = normalizeEntryValue('color', value)
   if (cleaned.length === 3 || cleaned.length === 6) return `#${cleaned}`
   return '#ffffff'
+}
+
+function splitCsv(value: string): string[] {
+  return value
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)
+}
+
+function joinCsv(values: string[]): string {
+  return values
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .join(',')
+}
+
+function normalizeNumberToken(value: string): string {
+  return value.replace(/[^\d.-]/g, '')
 }
 
 export function MangoHudLive() {
@@ -294,6 +367,210 @@ export function MangoHudLive() {
   }
 
   const entryMap = useMemo(() => new Map(entries.map((e) => [e.key, e.value])), [entries])
+  const catalogByKey = useMemo(() => new Map(CATALOG.map((item) => [item.key, item])), [])
+
+  const setListTokens = (item: CatalogItem, tokens: string[]) => {
+    const normalized = tokens.map((token) => {
+      if (item.listKind === 'color-list') return normalizeEntryValue('color', token)
+      if (item.listKind === 'number-list') return normalizeNumberToken(token)
+      return token.trim()
+    })
+    setKey(item, joinCsv(normalized))
+  }
+
+  const renderNumberListField = (item: CatalogItem, value: string) => {
+    const tokens = splitCsv(value)
+    return (
+      <div className="space-y-1">
+        {tokens.map((token, idx) => (
+          <div key={`${item.key}-${idx}`} className="flex gap-2">
+            <Input
+              type="number"
+              value={token}
+              onChange={(e) => {
+                const next = [...tokens]
+                next[idx] = normalizeNumberToken(e.target.value)
+                setListTokens(item, next)
+              }}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const next = tokens.filter((_, i) => i !== idx)
+                setListTokens(item, next)
+              }}
+            >
+              Remove
+            </Button>
+          </div>
+        ))}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setListTokens(item, [...tokens, item.listKind === 'number-list' ? '0' : ''])}
+        >
+          Add value
+        </Button>
+      </div>
+    )
+  }
+
+  const renderColorListField = (item: CatalogItem, value: string) => {
+    const tokens = splitCsv(value)
+    return (
+      <div className="space-y-1">
+        {tokens.map((token, idx) => {
+          const normalized = normalizeEntryValue('color', token)
+          const valid = normalized.length === 3 || normalized.length === 6
+          return (
+            <div key={`${item.key}-${idx}`} className="flex gap-2 items-center">
+              <Input
+                type="color"
+                className="h-9 w-12 p-1"
+                value={toColorHex(token)}
+                onChange={(e) => {
+                  const next = [...tokens]
+                  next[idx] = normalizeEntryValue('color', e.target.value)
+                  setListTokens(item, next)
+                }}
+              />
+              <Input
+                value={token}
+                onChange={(e) => {
+                  const next = [...tokens]
+                  next[idx] = e.target.value
+                  setListTokens(item, next)
+                }}
+                placeholder="RRGGBB"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const next = tokens.filter((_, i) => i !== idx)
+                  setListTokens(item, next)
+                }}
+              >
+                Remove
+              </Button>
+              {!valid && <span className="text-[11px] text-amber-600">Invalid hex</span>}
+            </div>
+          )
+        })}
+        <Button size="sm" variant="outline" onClick={() => setListTokens(item, [...tokens, 'ffffff'])}>
+          Add color
+        </Button>
+      </div>
+    )
+  }
+
+  const renderPairedThresholdColorField = (thresholdItem: CatalogItem, thresholdValue: string) => {
+    const colorKey = thresholdItem.pairWith
+    if (!colorKey) return null
+    const colorItem = catalogByKey.get(colorKey)
+    if (!colorItem) return null
+    const colorValue = entryMap.get(colorKey) ?? ''
+    const thresholds = splitCsv(thresholdValue)
+    const colors = splitCsv(colorValue)
+    const rows = Math.max(thresholds.length, Math.min(colors.length, thresholds.length + 1))
+    const hasFallback = colors.length === thresholds.length + 1
+    const mismatch = !(colors.length === thresholds.length || hasFallback)
+
+    return (
+      <div className="space-y-2 rounded border border-border/60 p-2">
+        <div>
+          <p className="text-xs text-muted-foreground">{thresholdItem.label}</p>
+          <p className="text-[11px] text-muted-foreground">Nth threshold uses Nth color.</p>
+          {mismatch && (
+            <p className="text-[11px] text-amber-600">
+              Threshold/color count mismatch. Recommended: same count, or one extra color as fallback.
+            </p>
+          )}
+        </div>
+        {Array.from({ length: rows }).map((_, idx) => {
+          const isFallbackRow = hasFallback && idx === thresholds.length
+          const thresholdToken = thresholds[idx] ?? ''
+          const colorToken = colors[idx] ?? ''
+          const colorNorm = normalizeEntryValue('color', colorToken)
+          const colorValid = colorNorm.length === 3 || colorNorm.length === 6
+          return (
+            <div
+              key={`${thresholdItem.key}-row-${idx}`}
+              className="grid grid-cols-1 md:grid-cols-[120px_1fr_40px_1fr_auto] gap-2 items-center"
+            >
+              <span className="text-[11px] text-muted-foreground">{isFallbackRow ? 'Fallback' : `#${idx + 1}`}</span>
+              {isFallbackRow ? (
+                <span className="text-xs text-muted-foreground">else</span>
+              ) : (
+                <Input
+                  type="number"
+                  value={thresholdToken}
+                  onChange={(e) => {
+                    const next = [...thresholds]
+                    next[idx] = normalizeNumberToken(e.target.value)
+                    setListTokens(thresholdItem, next)
+                  }}
+                />
+              )}
+              <span className="text-xs text-muted-foreground">→</span>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="color"
+                  className="h-9 w-12 p-1"
+                  value={toColorHex(colorToken)}
+                  onChange={(e) => {
+                    const next = [...colors]
+                    next[idx] = normalizeEntryValue('color', e.target.value)
+                    setListTokens(colorItem, next)
+                  }}
+                />
+                <Input
+                  value={colorToken}
+                  onChange={(e) => {
+                    const next = [...colors]
+                    next[idx] = e.target.value
+                    setListTokens(colorItem, next)
+                  }}
+                  placeholder="RRGGBB"
+                />
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const nextColors = colors.filter((_, i) => i !== idx)
+                  setListTokens(colorItem, nextColors)
+                  if (!isFallbackRow) {
+                    const nextThresholds = thresholds.filter((_, i) => i !== idx)
+                    setListTokens(thresholdItem, nextThresholds)
+                  }
+                }}
+              >
+                Remove
+              </Button>
+              {!colorValid && <p className="col-span-5 text-[11px] text-amber-600">Row color is not a valid hex token.</p>}
+            </div>
+          )
+        })}
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setListTokens(thresholdItem, [...thresholds, '0'])
+              setListTokens(colorItem, [...colors, 'ffffff'])
+            }}
+          >
+            Add threshold row
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setListTokens(colorItem, [...colors, 'ffffff'])}>
+            Add fallback color
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="h-full min-h-0 flex flex-col p-4 gap-3 overflow-y-auto">
@@ -404,7 +681,7 @@ export function MangoHudLive() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] gap-3">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Full MangoHud Catalog</CardTitle>
@@ -415,11 +692,14 @@ export function MangoHudLive() {
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{section}</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {items.map((item) => {
+                    if (item.pairRole === 'color' && item.pairWith) return null
                     const value = entryMap.get(item.key) ?? (item.type === 'boolean' ? '0' : '')
                     const warning = getWarning(item, value)
+                    const showStandardLabel = !(item.type === 'list' && item.pairRole === 'threshold' && item.pairWith)
+                    const isPairedThreshold = item.type === 'list' && item.pairRole === 'threshold' && item.pairWith
                     return (
-                      <div key={item.key} className="space-y-1">
-                        <label className="text-xs text-muted-foreground">{item.label}</label>
+                      <div key={item.key} className={`space-y-1 ${isPairedThreshold ? 'md:col-span-2' : ''}`}>
+                        {showStandardLabel && <label className="text-xs text-muted-foreground">{item.label}</label>}
                         {item.type === 'boolean' && (
                           <Select value={value} onChange={(e) => setKey(item, e.target.value)}>
                             <option value="1">Enabled</option>
@@ -447,20 +727,30 @@ export function MangoHudLive() {
                           />
                         )}
                         {item.type === 'list' && (
-                          <Input
-                            value={value}
-                            onChange={(e) =>
-                              setKey(
-                                item,
-                                e.target.value
-                                  .split(',')
-                                  .map((x) => x.trim())
-                                  .filter(Boolean)
-                                  .join(',')
-                              )
-                            }
-                            placeholder="comma,separated,values"
-                          />
+                          <>
+                            {item.pairRole === 'threshold' && item.pairWith
+                              ? renderPairedThresholdColorField(item, value)
+                              : item.listKind === 'color-list'
+                                ? renderColorListField(item, value)
+                                : item.listKind === 'number-list'
+                                  ? renderNumberListField(item, value)
+                                  : (
+                                    <Input
+                                      value={value}
+                                      onChange={(e) =>
+                                        setKey(
+                                          item,
+                                          e.target.value
+                                            .split(',')
+                                            .map((x) => x.trim())
+                                            .filter(Boolean)
+                                            .join(',')
+                                        )
+                                      }
+                                      placeholder="comma,separated,values"
+                                    />
+                                  )}
+                          </>
                         )}
                         {item.type === 'color' && (
                           <div className="flex items-center gap-2">
