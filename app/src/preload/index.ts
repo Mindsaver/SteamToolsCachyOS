@@ -19,6 +19,12 @@ import type {
   CompatInstallProgress,
   CompatInstallLayout,
   CompatToolsUpdateAvailablePayload,
+  ProtonUserSettingsGetResult,
+  ProtonUserSettingsSaveResult,
+  ProtonUserSettingsCreateResult,
+  ProtonUserSettingsListBackupsResult,
+  ProtonUserSettingsReadBackupResult,
+  ProtonUserSettingsSaveNamedBackupResult,
 } from '../shared/types'
 
 // VITE_SIM is replaced at build time by electron-vite define.
@@ -71,6 +77,29 @@ const realApi = {
     ipcRenderer.invoke(IPC.COMPAT_SNAPSHOT, appIds),
   getGlobalEnvOverrides: (appId: number): Promise<Record<string, string>> =>
     ipcRenderer.invoke(IPC.STEAM_GET_GLOBAL_ENV, appId),
+
+  getProtonUserSettings: (internalName: string): Promise<ProtonUserSettingsGetResult> =>
+    ipcRenderer.invoke(IPC.STEAM_PROTON_USER_SETTINGS_GET, internalName),
+  saveProtonUserSettings: (payload: {
+    internalName: string
+    fileText: string
+  }): Promise<ProtonUserSettingsSaveResult> =>
+    ipcRenderer.invoke(IPC.STEAM_PROTON_USER_SETTINGS_SAVE, payload),
+  createProtonUserSettings: (internalName: string): Promise<ProtonUserSettingsCreateResult> =>
+    ipcRenderer.invoke(IPC.STEAM_PROTON_USER_SETTINGS_CREATE, internalName),
+  listProtonUserSettingsBackups: (internalName: string): Promise<ProtonUserSettingsListBackupsResult> =>
+    ipcRenderer.invoke(IPC.STEAM_PROTON_USER_SETTINGS_LIST_BACKUPS, internalName),
+  readProtonUserSettingsBackup: (payload: {
+    internalName: string
+    fileName: string
+  }): Promise<ProtonUserSettingsReadBackupResult> =>
+    ipcRenderer.invoke(IPC.STEAM_PROTON_USER_SETTINGS_READ_BACKUP, payload),
+  saveProtonUserSettingsNamedBackup: (payload: {
+    internalName: string
+    fileName: string
+    fileText: string
+  }): Promise<ProtonUserSettingsSaveNamedBackupResult> =>
+    ipcRenderer.invoke(IPC.STEAM_PROTON_USER_SETTINGS_SAVE_NAMED_BACKUP, payload),
 
   listCompatToolsInstalled: (): Promise<InstalledCompatToolRow[]> =>
     ipcRenderer.invoke(IPC.COMPAT_TOOLS_LIST_INSTALLED),

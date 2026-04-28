@@ -11,7 +11,16 @@ import {
 } from './services/steam/localconfig'
 import { isSteamRunning, closeSteam } from './services/steam/processes'
 import { loadCompatMappings, getCompatInfo, getSteamPlayDefault } from './services/steam/compat'
-import { getGlobalEnvOverridesForApp, resolveToolInstallDir } from './services/steam/userSettings'
+import {
+  getGlobalEnvOverridesForApp,
+  resolveToolInstallDir,
+  readUserSettingsFileText,
+  writeUserSettingsPyFile,
+  createMinimalUserSettingsPy,
+  listUserSettingsBackups,
+  readUserSettingsBackupFile,
+  writeUserSettingsBackupFile,
+} from './services/steam/userSettings'
 import {
   getInstalledCompatRows,
   listGeReleasesForUi,
@@ -30,7 +39,14 @@ import type {
   SymlinkHubOptions,
   BatchTransformPreviewRequest,
   BatchTransformApplyRequest,
+  ProtonUserSettingsCreateResult,
+  ProtonUserSettingsGetResult,
+  ProtonUserSettingsSaveResult,
+  ProtonUserSettingsListBackupsResult,
+  ProtonUserSettingsReadBackupResult,
+  ProtonUserSettingsSaveNamedBackupResult,
 } from '../shared/types'
+import { parseUserSettingsEnvFromText } from '../shared/userSettingsPy'
 import { runSymlinkHub } from './services/symlink/hub'
 import { analyzeDll } from './services/fsr/ffx'
 import { copyDllToGames } from './services/fsr/copy'
@@ -283,6 +299,132 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (!installPath) return {}
     return getGlobalEnvOverridesForApp(installPath, appId)
   })
+
+  ipcMain.handle(IPC.STEAM_PROTON_USER_SETTINGS_GET, async (_e, internalName: string): Promise<ProtonUserSettingsGetResult> => {
+    const settings = loadSettings()
+    const installPath = settings.steamPath || resolveSteamInstall()
+    if (!installPath) return { ok: false, error: 'Steam not found' }
+    const trimmed = String(internalName ?? '').trim()
+    if (!trimmed) return { ok: false, error: 'Missing tool id' }
+    const dir = resolveToolInstallDir(installPath, trimmed)
+    if (!dir) return { ok: false, error: 'Tool not found' }
+    const rows = getInstalledCompatRows(installPath)
+    const row = rows.find((r) => r.internalName === trimmed)
+    const filePath = path.join(dir, 'user_settings.py')
+    const fileExists = fs.existsSync(filePath)
+    const fileText = readUserSettingsFileText(dir)
+    const env = parseUserSettingsEnvFromText(fileText)
+    return {
+      ok: true,
+      internalName: trimmed,
+      displayName: row?.displayName ?? null,
+      installPath: dir,
+      filePath,
+      fileExists,
+      fileText,
+      env,
+    }
+  })
+
+  ipcMain.handle(
+    IPC.STEAM_PROTON_USER_SETTINGS_SAVE,
+    async (_e, payload: { internalName: string; fileText: string }): Promise<ProtonUserSettingsSaveResult> => {
+      const settings = loadSettings()
+      const installPath = settings.steamPath || resolveSteamInstall()
+      if (!installPath) return { ok: false, error: 'Steam not found' }
+      const trimmed = String(payload.internalName ?? '').trim()
+      if (!trimmed) return { ok: false, error: 'Missing tool id' }
+      const dir = resolveToolInstallDir(installPath, trimmed)
+      if (!dir) return { ok: false, error: 'Tool not found' }
+      try {
+        writeUserSettingsPyFile(dir, payload.fileText)
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : 'Write failed' }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.STEAM_PROTON_USER_SETTINGS_CREATE,
+    async (_e, internalName: string): Promise<ProtonUserSettingsCreateResult> => {
+      const settings = loadSettings()
+      const installPath = settings.steamPath || resolveSteamInstall()
+      if (!installPath) return { ok: false, error: 'Steam not found' }
+      const trimmed = String(internalName ?? '').trim()
+      if (!trimmed) return { ok: false, error: 'Missing tool id' }
+      const dir = resolveToolInstallDir(installPath, trimmed)
+      if (!dir) return { ok: false, error: 'Tool not found' }
+      const created = createMinimalUserSettingsPy(dir)
+      if (!created.ok) return { ok: false, error: created.error }
+      const rows = getInstalledCompatRows(installPath)
+      const row = rows.find((r) => r.internalName === trimmed)
+      const filePath = path.join(dir, 'user_settings.py')
+      const fileText = readUserSettingsFileText(dir)
+      const env = parseUserSettingsEnvFromText(fileText)
+      return {
+        ok: true,
+        data: {
+          ok: true,
+          internalName: trimmed,
+          displayName: row?.displayName ?? null,
+          installPath: dir,
+          filePath,
+          fileExists: true,
+          fileText,
+          env,
+        },
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.STEAM_PROTON_USER_SETTINGS_LIST_BACKUPS,
+    async (_e, internalName: string): Promise<ProtonUserSettingsListBackupsResult> => {
+      const settings = loadSettings()
+      const installPath = settings.steamPath || resolveSteamInstall()
+      if (!installPath) return { ok: false, error: 'Steam not found' }
+      const trimmed = String(internalName ?? '').trim()
+      if (!trimmed) return { ok: false, error: 'Missing tool id' }
+      const dir = resolveToolInstallDir(installPath, trimmed)
+      if (!dir) return { ok: false, error: 'Tool not found' }
+      return { ok: true, entries: listUserSettingsBackups(dir) }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.STEAM_PROTON_USER_SETTINGS_READ_BACKUP,
+    async (
+      _e,
+      payload: { internalName: string; fileName: string }
+    ): Promise<ProtonUserSettingsReadBackupResult> => {
+      const settings = loadSettings()
+      const installPath = settings.steamPath || resolveSteamInstall()
+      if (!installPath) return { ok: false, error: 'Steam not found' }
+      const trimmed = String(payload.internalName ?? '').trim()
+      if (!trimmed) return { ok: false, error: 'Missing tool id' }
+      const dir = resolveToolInstallDir(installPath, trimmed)
+      if (!dir) return { ok: false, error: 'Tool not found' }
+      return readUserSettingsBackupFile(dir, payload.fileName)
+    }
+  )
+
+  ipcMain.handle(
+    IPC.STEAM_PROTON_USER_SETTINGS_SAVE_NAMED_BACKUP,
+    async (
+      _e,
+      payload: { internalName: string; fileName: string; fileText: string }
+    ): Promise<ProtonUserSettingsSaveNamedBackupResult> => {
+      const settings = loadSettings()
+      const installPath = settings.steamPath || resolveSteamInstall()
+      if (!installPath) return { ok: false, error: 'Steam not found' }
+      const trimmed = String(payload.internalName ?? '').trim()
+      if (!trimmed) return { ok: false, error: 'Missing tool id' }
+      const dir = resolveToolInstallDir(installPath, trimmed)
+      if (!dir) return { ok: false, error: 'Tool not found' }
+      return writeUserSettingsBackupFile(dir, payload.fileName, payload.fileText)
+    }
+  )
 
   // ── Compatibility tools (GE-Proton / Proton-CachyOS) ───────────────────────
 

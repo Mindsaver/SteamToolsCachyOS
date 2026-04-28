@@ -1,13 +1,13 @@
 import fs from 'fs'
 import path from 'path'
 import vdf from 'simple-vdf'
+import { parseUserSettingsEnvFromText, formatUserSettingsPyFile } from '../../../shared/userSettingsPy'
 import { loadCompatMappings } from './compat'
 
 // Reads `compatibilitytools.d/<tool>/user_settings.py` for the active compat
 // tool for a given appId and extracts non-default env key/value overrides.
 
 const PROTON_ENV_RE = /PROTON_|DXVK_|WINEDLLOVERRIDES|VKD3D_/i
-const USER_SETTINGS_KV_RE = /['"]([A-Za-z_][A-Za-z0-9_]*)['"]:\s*['"]([^'"]*)['"]/g
 
 function stripPyCommentsAndStrings(text: string): string {
   return text
@@ -38,15 +38,136 @@ function userSettingsLooksActive(text: string): boolean {
   return false
 }
 
-function extractUserSettingsKv(text: string): Record<string, string> {
-  const body = stripPyCommentsAndStrings(text)
-  const out: Record<string, string> = {}
-  let m: RegExpExecArray | null
-  const re = new RegExp(USER_SETTINGS_KV_RE.source, 'g')
-  while ((m = re.exec(body)) !== null) {
-    out[m[1]] = m[2]
+/** Full env dict from file (no sample filtering). Missing file → {}. */
+export function readUserSettingsEnvRaw(toolDir: string): Record<string, string> {
+  const usPath = path.join(toolDir, 'user_settings.py')
+  if (!fs.existsSync(usPath)) return {}
+  try {
+    const text = fs.readFileSync(usPath, 'utf-8')
+    return parseUserSettingsEnvFromText(text)
+  } catch {
+    return {}
   }
+}
+
+export function readUserSettingsFileText(toolDir: string): string {
+  const usPath = path.join(toolDir, 'user_settings.py')
+  if (!fs.existsSync(usPath)) return ''
+  try {
+    return fs.readFileSync(usPath, 'utf-8')
+  } catch {
+    return ''
+  }
+}
+
+export function writeUserSettingsPyFile(toolDir: string, fileText: string): void {
+  const usPath = path.join(toolDir, 'user_settings.py')
+  fs.mkdirSync(toolDir, { recursive: true })
+  fs.writeFileSync(usPath, fileText, 'utf-8')
+}
+
+// ── Named backups (Proton user settings UI) ─────────────────────────────────
+
+const USER_SETTINGS_BACKUPS_SUBDIR = 'steamtools-user-settings-backups'
+const MAX_BACKUP_BASENAME_LEN = 128
+
+/** Single path segment only; safe for join(toolDir, subdir, name). */
+export function safeBackupBasename(
+  fileName: string
+): { ok: true; name: string } | { ok: false; error: string } {
+  const t = fileName.trim()
+  if (!t) return { ok: false, error: 'Empty file name' }
+  if (t !== path.basename(t)) return { ok: false, error: 'Path separators not allowed' }
+  if (t.includes('..')) return { ok: false, error: 'Invalid file name' }
+  if (t.length > MAX_BACKUP_BASENAME_LEN) return { ok: false, error: 'File name too long' }
+  if (!/^[a-zA-Z0-9._\- ]+$/.test(t)) {
+    return { ok: false, error: 'Use only letters, numbers, spaces, dot, dash, underscore' }
+  }
+  return { ok: true, name: t }
+}
+
+export function userSettingsBackupsDir(toolDir: string): string {
+  return path.join(toolDir, USER_SETTINGS_BACKUPS_SUBDIR)
+}
+
+export function listUserSettingsBackups(toolDir: string): { fileName: string; mtimeMs: number }[] {
+  const dir = userSettingsBackupsDir(toolDir)
+  if (!fs.existsSync(dir)) return []
+  const out: { fileName: string; mtimeMs: number }[] = []
+  try {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!ent.isFile()) continue
+      const safe = safeBackupBasename(ent.name)
+      if (!safe.ok) continue
+      const p = path.join(dir, ent.name)
+      try {
+        const st = fs.statSync(p)
+        out.push({ fileName: ent.name, mtimeMs: st.mtimeMs })
+      } catch {
+        // skip
+      }
+    }
+  } catch {
+    return []
+  }
+  out.sort((a, b) => b.mtimeMs - a.mtimeMs)
   return out
+}
+
+export function writeUserSettingsBackupFile(
+  toolDir: string,
+  fileName: string,
+  content: string
+): { ok: true } | { ok: false; error: string } {
+  const safe = safeBackupBasename(fileName)
+  if (!safe.ok) return safe
+  try {
+    const dir = userSettingsBackupsDir(toolDir)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, safe.name), content, 'utf-8')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Write failed' }
+  }
+}
+
+export function readUserSettingsBackupFile(
+  toolDir: string,
+  fileName: string
+): { ok: true; fileText: string } | { ok: false; error: string } {
+  const safe = safeBackupBasename(fileName)
+  if (!safe.ok) return safe
+  const p = path.join(userSettingsBackupsDir(toolDir), safe.name)
+  if (!fs.existsSync(p)) return { ok: false, error: 'Backup not found' }
+  try {
+    const fileText = fs.readFileSync(p, 'utf-8')
+    return { ok: true, fileText }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Read failed' }
+  }
+}
+
+/** Create `user_settings.py` if missing. Prefer copying `user_settings.sample.py` when present. */
+export function createMinimalUserSettingsPy(toolDir: string): { ok: true } | { ok: false; error: string } {
+  const usPath = path.join(toolDir, 'user_settings.py')
+  if (fs.existsSync(usPath)) {
+    return { ok: false, error: 'user_settings.py already exists' }
+  }
+  const samplePath = path.join(toolDir, 'user_settings.sample.py')
+  if (fs.existsSync(samplePath)) {
+    try {
+      fs.copyFileSync(samplePath, usPath)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'copy failed' }
+    }
+  }
+  try {
+    writeUserSettingsPyFile(toolDir, formatUserSettingsPyFile({}))
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'write failed' }
+  }
 }
 
 /** Extract env overrides from a Proton tool's user_settings.py.
@@ -64,7 +185,7 @@ export function userSettingsEnvOverrides(toolDir: string): Record<string, string
 
   if (!userSettingsLooksActive(text)) return {}
 
-  const parsed = extractUserSettingsKv(text)
+  const parsed = parseUserSettingsEnvFromText(text)
   if (!Object.keys(parsed).length) return {}
 
   // Strip keys identical to shipped sample defaults
@@ -72,7 +193,7 @@ export function userSettingsEnvOverrides(toolDir: string): Record<string, string
   if (fs.existsSync(samplePath)) {
     try {
       const sampleText = fs.readFileSync(samplePath, 'utf-8')
-      const sampleParsed = extractUserSettingsKv(sampleText)
+      const sampleParsed = parseUserSettingsEnvFromText(sampleText)
       for (const k of Object.keys(parsed)) {
         if (sampleParsed[k] === parsed[k]) delete parsed[k]
       }

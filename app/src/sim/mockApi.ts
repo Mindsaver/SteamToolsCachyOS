@@ -20,7 +20,14 @@ import type {
   CompatInstallProgress,
   CompatUpdateCheckResult,
   CompatToolsUpdateAvailablePayload,
+  ProtonUserSettingsCreateResult,
+  ProtonUserSettingsGetResult,
+  ProtonUserSettingsSaveResult,
+  ProtonUserSettingsListBackupsResult,
+  ProtonUserSettingsReadBackupResult,
+  ProtonUserSettingsSaveNamedBackupResult,
 } from '../shared/types'
+import { formatUserSettingsPyFile, parseUserSettingsEnvFromText } from '../shared/userSettingsPy'
 import { transformLaunchOptions } from '../shared/launchOptions/compose'
 import {
   MOCK_STEAM_INFO,
@@ -44,6 +51,29 @@ const MOCK_COMPAT_FALLBACK: CompatToolInfo = {
 }
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
+const MOCK_COMPAT_ROWS: InstalledCompatToolRow[] = [
+  {
+    dirName: 'GE-Proton10-34',
+    installPath: '/home/arch/.local/share/Steam/compatibilitytools.d/GE-Proton10-34',
+    internalName: 'GE-Proton10-34',
+    displayName: 'GE-Proton10-34',
+    provider: 'ge_proton',
+  },
+  {
+    dirName: 'Proton-CachyOS Latest',
+    installPath: '/home/arch/.local/share/Steam/compatibilitytools.d/Proton-CachyOS Latest',
+    internalName: 'Proton-CachyOS Latest',
+    displayName: 'Proton-CachyOS Latest',
+    provider: 'proton_cachyos',
+  },
+]
+
+/** Simulated `user_settings.py` body per internal tool name */
+const simProtonUserSettingsText = new Map<string, string>()
+
+/** Named backups per tool: fileName → content + mtime */
+const simProtonNamedBackups = new Map<string, Map<string, { content: string; mtimeMs: number }>>()
 
 // Mutable sim state — edits persist within the session
 let simSettings: AppSettings = { ...MOCK_SETTINGS }
@@ -166,25 +196,113 @@ export const mockApi = {
     return {}
   },
 
+  getProtonUserSettings: async (internalName: string): Promise<ProtonUserSettingsGetResult> => {
+    await delay(80)
+    const trimmed = String(internalName ?? '').trim()
+    const row = MOCK_COMPAT_ROWS.find((r) => r.internalName === trimmed)
+    if (!row) return { ok: false, error: 'Tool not found' }
+    const fileText = simProtonUserSettingsText.get(trimmed) ?? ''
+    const fileExists = fileText.length > 0
+    const filePath = `${row.installPath}/user_settings.py`
+    const env = parseUserSettingsEnvFromText(fileText)
+    return {
+      ok: true,
+      internalName: trimmed,
+      displayName: row.displayName,
+      installPath: row.installPath,
+      filePath,
+      fileExists,
+      fileText,
+      env,
+    }
+  },
+  saveProtonUserSettings: async (payload: {
+    internalName: string
+    fileText: string
+  }): Promise<ProtonUserSettingsSaveResult> => {
+    await delay(100)
+    const trimmed = String(payload.internalName ?? '').trim()
+    if (!MOCK_COMPAT_ROWS.some((r) => r.internalName === trimmed)) {
+      return { ok: false, error: 'Tool not found' }
+    }
+    simProtonUserSettingsText.set(trimmed, payload.fileText)
+    return { ok: true }
+  },
+  createProtonUserSettings: async (internalName: string): Promise<ProtonUserSettingsCreateResult> => {
+    await delay(100)
+    const trimmed = String(internalName ?? '').trim()
+    const row = MOCK_COMPAT_ROWS.find((r) => r.internalName === trimmed)
+    if (!row) return { ok: false, error: 'Tool not found' }
+    if (simProtonUserSettingsText.has(trimmed) && (simProtonUserSettingsText.get(trimmed) ?? '').length > 0) {
+      return { ok: false, error: 'user_settings.py already exists' }
+    }
+    const fileText = formatUserSettingsPyFile({})
+    simProtonUserSettingsText.set(trimmed, fileText)
+    const filePath = `${row.installPath}/user_settings.py`
+    return {
+      ok: true,
+      data: {
+        ok: true,
+        internalName: trimmed,
+        displayName: row.displayName,
+        installPath: row.installPath,
+        filePath,
+        fileExists: true,
+        fileText,
+        env: parseUserSettingsEnvFromText(fileText),
+      },
+    }
+  },
+  listProtonUserSettingsBackups: async (internalName: string): Promise<ProtonUserSettingsListBackupsResult> => {
+    await delay(40)
+    const trimmed = String(internalName ?? '').trim()
+    if (!MOCK_COMPAT_ROWS.some((r) => r.internalName === trimmed)) {
+      return { ok: false, error: 'Tool not found' }
+    }
+    const m = simProtonNamedBackups.get(trimmed)
+    const entries = m
+      ? [...m.entries()]
+          .map(([fileName, v]) => ({ fileName, mtimeMs: v.mtimeMs }))
+          .sort((a, b) => b.mtimeMs - a.mtimeMs)
+      : []
+    return { ok: true, entries }
+  },
+  readProtonUserSettingsBackup: async (payload: {
+    internalName: string
+    fileName: string
+  }): Promise<ProtonUserSettingsReadBackupResult> => {
+    await delay(40)
+    const trimmed = String(payload.internalName ?? '').trim()
+    const m = simProtonNamedBackups.get(trimmed)
+    const row = m?.get(payload.fileName)
+    if (!row) return { ok: false, error: 'Backup not found' }
+    return { ok: true, fileText: row.content }
+  },
+  saveProtonUserSettingsNamedBackup: async (payload: {
+    internalName: string
+    fileName: string
+    fileText: string
+  }): Promise<ProtonUserSettingsSaveNamedBackupResult> => {
+    await delay(80)
+    const trimmed = String(payload.internalName ?? '').trim()
+    if (!MOCK_COMPAT_ROWS.some((r) => r.internalName === trimmed)) {
+      return { ok: false, error: 'Tool not found' }
+    }
+    const fn = payload.fileName.trim()
+    if (!fn || fn.includes('/') || fn.includes('..')) return { ok: false, error: 'Invalid file name' }
+    let m = simProtonNamedBackups.get(trimmed)
+    if (!m) {
+      m = new Map()
+      simProtonNamedBackups.set(trimmed, m)
+    }
+    m.set(fn, { content: payload.fileText, mtimeMs: Date.now() })
+    return { ok: true }
+  },
+
   // ── Compatibility tools ───────────────────────────────────────────────────
   listCompatToolsInstalled: async (): Promise<InstalledCompatToolRow[]> => {
     await delay(120)
-    return [
-      {
-        dirName: 'GE-Proton10-34',
-        installPath: '/home/arch/.local/share/Steam/compatibilitytools.d/GE-Proton10-34',
-        internalName: 'GE-Proton10-34',
-        displayName: 'GE-Proton10-34',
-        provider: 'ge_proton',
-      },
-      {
-        dirName: 'Proton-CachyOS Latest',
-        installPath: '/home/arch/.local/share/Steam/compatibilitytools.d/Proton-CachyOS Latest',
-        internalName: 'Proton-CachyOS Latest',
-        displayName: 'Proton-CachyOS Latest',
-        provider: 'proton_cachyos',
-      },
-    ]
+    return MOCK_COMPAT_ROWS.map((r) => ({ ...r }))
   },
   listCompatReleases: async ({
     provider,

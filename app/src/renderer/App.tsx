@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from 'react'
 import { Routes, Route, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, FolderSymlink, Cpu, Gamepad2, Settings as SettingsIcon, Package } from 'lucide-react'
+import {
+  LayoutDashboard,
+  FolderSymlink,
+  Cpu,
+  Gamepad2,
+  Settings as SettingsIcon,
+  Package,
+  FileCog,
+} from 'lucide-react'
 import { Toaster, toast } from 'sonner'
 import { cn } from './lib/utils'
 import { UpdateBanner } from './components/UpdateBanner'
@@ -9,6 +17,7 @@ import { Dashboard } from './routes/Dashboard'
 import { SymlinkHub } from './routes/SymlinkHub'
 import { FsrDll } from './routes/FsrDll'
 import { LaunchOptions } from './routes/LaunchOptions'
+import { ProtonUserSettings } from './routes/ProtonUserSettings'
 import { CompatTools } from './routes/CompatTools'
 import { Settings } from './routes/Settings'
 import { AboutDialog } from './components/AboutDialog'
@@ -23,6 +32,7 @@ const NAV_ITEMS = [
   { to: '/symlink', label: 'Symlink Hub', icon: FolderSymlink },
   { to: '/fsr', label: 'FSR DLL', icon: Cpu },
   { to: '/launch-options', label: 'Launch Options', icon: Gamepad2 },
+  { to: '/proton-user-settings', label: 'Proton user settings', icon: FileCog },
   { to: '/compat-tools', label: 'Compat tools', icon: Package },
 ]
 
@@ -140,6 +150,7 @@ export default function App() {
             <Route path="/symlink" element={<SymlinkHub />} />
             <Route path="/fsr" element={<FsrDll />} />
             <Route path="/launch-options" element={<LaunchOptions />} />
+            <Route path="/proton-user-settings" element={<ProtonUserSettings />} />
             <Route path="/compat-tools" element={<CompatTools />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>

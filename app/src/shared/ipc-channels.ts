@@ -7,6 +7,12 @@ export const IPC = {
   STEAM_CLOSE: 'steam:close',
   STEAM_LIST_ACCOUNTS: 'steam:list-accounts',
   STEAM_GET_GLOBAL_ENV: 'steam:get-global-env',
+  STEAM_PROTON_USER_SETTINGS_GET: 'steam:proton-user-settings-get',
+  STEAM_PROTON_USER_SETTINGS_SAVE: 'steam:proton-user-settings-save',
+  STEAM_PROTON_USER_SETTINGS_CREATE: 'steam:proton-user-settings-create',
+  STEAM_PROTON_USER_SETTINGS_LIST_BACKUPS: 'steam:proton-user-settings-list-backups',
+  STEAM_PROTON_USER_SETTINGS_READ_BACKUP: 'steam:proton-user-settings-read-backup',
+  STEAM_PROTON_USER_SETTINGS_SAVE_NAMED_BACKUP: 'steam:proton-user-settings-save-named-backup',
 
   // Games
   GAMES_LIST: 'games:list',

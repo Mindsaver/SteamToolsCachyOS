@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import {
   Save, RefreshCw, AlertTriangle, FolderOpen, Undo2, Copy, X, ChevronDown, ChevronUp, Clipboard,
+  FileCog,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Card } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -505,6 +507,11 @@ function SingleGameEditor({
   game, compatInfo, editValue, baseline, model, isDirty, steamRunning, saving, gpuInfo, globalEnv,
   onRawChange, onModelChange, onSave, onRevert, onCopyTo,
 }: SingleGameEditorProps) {
+  const navigate = useNavigate()
+  const protonToolForUserSettings =
+    compatInfo && compatInfo.selectionKind !== 'native'
+      ? (compatInfo.toolName ?? compatInfo.steamDefaultToolName ?? null)
+      : null
   const charCount = editValue.length
   const charWarning = charCount > 256
   const isDirtyDiff = isDirty && baseline !== editValue
@@ -551,6 +558,18 @@ function SingleGameEditor({
               </>
             )}
           </p>
+        )}
+        {protonToolForUserSettings && (
+          <button
+            type="button"
+            className="text-xs text-primary hover:underline flex items-center gap-1.5 mt-1 w-fit"
+            onClick={() =>
+              navigate(`/proton-user-settings?tool=${encodeURIComponent(protonToolForUserSettings)}`)
+            }
+          >
+            <FileCog className="h-3.5 w-3.5 shrink-0" />
+            Edit user_settings.py for this Proton build
+          </button>
         )}
       </div>
 

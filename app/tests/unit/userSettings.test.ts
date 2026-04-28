@@ -1,5 +1,5 @@
 /**
- * Unit tests for userSettingsEnvOverrides and resolveToolInstallDir.
+ * Unit tests for userSettingsEnvOverrides, resolveToolInstallDir, safeBackupBasename, writeUserSettingsPyFile.
  * These use vi.mock to avoid real filesystem access.
  */
 
@@ -11,16 +11,29 @@ vi.mock('fs', () => ({
     existsSync: vi.fn(),
     readFileSync: vi.fn(),
     readdirSync: vi.fn(),
+    mkdirSync: vi.fn(),
+    copyFileSync: vi.fn(),
+    writeFileSync: vi.fn(),
+    statSync: vi.fn(),
   },
 }))
 
 import fs from 'fs'
-import { userSettingsEnvOverrides, resolveToolInstallDir } from '../../src/main/services/steam/userSettings'
+import {
+  userSettingsEnvOverrides,
+  resolveToolInstallDir,
+  writeUserSettingsPyFile,
+  safeBackupBasename,
+} from '../../src/main/services/steam/userSettings'
 
 const mockFs = fs as {
   existsSync: ReturnType<typeof vi.fn>
   readFileSync: ReturnType<typeof vi.fn>
   readdirSync: ReturnType<typeof vi.fn>
+  mkdirSync: ReturnType<typeof vi.fn>
+  copyFileSync: ReturnType<typeof vi.fn>
+  writeFileSync: ReturnType<typeof vi.fn>
+  statSync: ReturnType<typeof vi.fn>
 }
 
 beforeEach(() => {
@@ -88,6 +101,40 @@ user_settings = {
     const result = userSettingsEnvOverrides('/some/tool')
     expect(result['PROTON_NO_ESYNC']).toBeUndefined()
     expect(result['DXVK_ASYNC']).toBe('1')
+  })
+})
+
+// ── safeBackupBasename / writeUserSettingsPyFile ─────────────────────────────
+
+describe('safeBackupBasename', () => {
+  it('accepts safe names', () => {
+    expect(safeBackupBasename('GE-Proton_2026-04-28_12-00-00.py')).toEqual({
+      ok: true,
+      name: 'GE-Proton_2026-04-28_12-00-00.py',
+    })
+  })
+
+  it('rejects path segments', () => {
+    expect(safeBackupBasename('../evil').ok).toBe(false)
+    expect(safeBackupBasename('a/b').ok).toBe(false)
+  })
+
+  it('rejects empty', () => {
+    expect(safeBackupBasename('').ok).toBe(false)
+    expect(safeBackupBasename('   ').ok).toBe(false)
+  })
+})
+
+describe('writeUserSettingsPyFile', () => {
+  it('writes without copying a rolling backup', () => {
+    mockFs.existsSync.mockReturnValue(true)
+    writeUserSettingsPyFile('/some/tool', 'new')
+    expect(mockFs.copyFileSync).not.toHaveBeenCalled()
+    expect(mockFs.writeFileSync).toHaveBeenCalledWith(
+      expect.stringMatching(/user_settings\.py$/),
+      'new',
+      'utf-8'
+    )
   })
 })
 

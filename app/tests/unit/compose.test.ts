@@ -23,6 +23,8 @@ import {
   findImpliedItems,
   applyItemWithRelations,
   CATALOG_BY_ID,
+  modelFromUserSettingsEnv,
+  userSettingsEnvFromModel,
 } from '../../src/shared/launchOptions/compose'
 
 // ── parse / serialize round-trip ──────────────────────────────────────────
@@ -740,5 +742,22 @@ describe('generic per-item round-trip', () => {
       const m2 = parseLaunchOptions(out)
       expect(isItemActive(m2, item), `gamescope toggle "${item.id}" not active after round-trip`).toBe(true)
     }
+  })
+})
+
+describe('modelFromUserSettingsEnv / userSettingsEnvFromModel', () => {
+  it('round-trips env dict with order', () => {
+    const env = { SECOND: '2', FIRST: '1' }
+    const m = modelFromUserSettingsEnv(env)
+    expect(m.envOrder).toEqual(['SECOND', 'FIRST'])
+    expect(userSettingsEnvFromModel(m)).toEqual(env)
+  })
+
+  it('userSettingsEnvFromModel respects envOrder then extra keys', () => {
+    const m = emptyModel()
+    m.envOrder = ['a']
+    m.env = { a: '1', b: '2' }
+    const out = userSettingsEnvFromModel(m)
+    expect(Object.keys(out)).toEqual(['a', 'b'])
   })
 })

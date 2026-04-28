@@ -187,6 +187,41 @@ export interface SteamCompatSnapshot {
   perApp: Record<string, CompatToolInfo>
 }
 
+/** Load/save `user_settings.py` for a compatibilitytools.d Proton build. */
+export type ProtonUserSettingsGetResult =
+  | {
+      ok: true
+      internalName: string
+      displayName: string | null
+      installPath: string
+      filePath: string
+      fileExists: boolean
+      fileText: string
+      env: Record<string, string>
+    }
+  | { ok: false; error: string }
+
+export type ProtonUserSettingsSaveResult = { ok: true } | { ok: false; error: string }
+
+export type ProtonUserSettingsCreateResult =
+  | { ok: true; data: Extract<ProtonUserSettingsGetResult, { ok: true }> }
+  | { ok: false; error: string }
+
+export interface ProtonUserSettingsBackupEntry {
+  fileName: string
+  mtimeMs: number
+}
+
+export type ProtonUserSettingsListBackupsResult =
+  | { ok: true; entries: ProtonUserSettingsBackupEntry[] }
+  | { ok: false; error: string }
+
+export type ProtonUserSettingsReadBackupResult =
+  | { ok: true; fileText: string }
+  | { ok: false; error: string }
+
+export type ProtonUserSettingsSaveNamedBackupResult = { ok: true } | { ok: false; error: string }
+
 export interface CompatInstallProgress {
   type: 'log' | 'progress' | 'done' | 'error'
   message: string

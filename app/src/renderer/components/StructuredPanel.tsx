@@ -58,12 +58,16 @@ interface StructuredPanelProps {
   globalEnv?: Record<string, string>
   /** null = fully interactive; 'steam-running' = read-only overlay; 'op-no-editor' = placeholder */
   disabledReason?: 'steam-running' | 'op-no-editor' | null
+  /** `userSettings` = env presets only (Proton user_settings.py editor). */
+  panelMode?: 'launch' | 'userSettings'
 }
 
 export function StructuredPanel({
-  model, onModelChange, gpuInfo, globalEnv = {}, disabledReason = null,
+  model, onModelChange, gpuInfo, globalEnv = {}, disabledReason = null, panelMode = 'launch',
 }: StructuredPanelProps) {
-  const [tabId, setTabId] = useState<string>(CATALOG_TABS[0]?.id ?? 'wrappers')
+  const [tabId, setTabId] = useState<string>(
+    panelMode === 'userSettings' ? 'presets' : CATALOG_TABS[0]?.id ?? 'wrappers'
+  )
   const [presetFilter, setPresetFilter] = useState('')
   const filterRef = useRef<HTMLInputElement>(null)
 
@@ -92,7 +96,7 @@ export function StructuredPanel({
     }
   }, [model, onModelChange, globalEnv, disabledReason])
 
-  const hasUnknown = hasUnrepresentedTokens(model)
+  const hasUnknown = panelMode === 'launch' && hasUnrepresentedTokens(model)
   const isLocked = disabledReason === 'steam-running'
 
   // '/' shortcut focuses preset search when on the presets tab (or any tab with 'filter' feature)
@@ -112,6 +116,10 @@ export function StructuredPanel({
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [tabId])
+
+  useEffect(() => {
+    if (panelMode === 'userSettings') setTabId('presets')
+  }, [panelMode])
 
   if (disabledReason === 'op-no-editor') {
     return (
@@ -150,13 +158,15 @@ export function StructuredPanel({
       )}
 
       {/* Dynamic tab strip from CATALOG_TABS */}
-      <div className="flex gap-0.5 p-0.5 rounded-lg bg-muted/40 border border-border">
-        {CATALOG_TABS.map((tab) => (
-          <button key={tab.id} className={tabCls(tab.id)} onClick={() => setTabId(tab.id)}>
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {panelMode === 'launch' && (
+        <div className="flex gap-0.5 p-0.5 rounded-lg bg-muted/40 border border-border">
+          {CATALOG_TABS.map((tab) => (
+            <button key={tab.id} className={tabCls(tab.id)} onClick={() => setTabId(tab.id)}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Tab content */}
       {tabFeatures.includes('filter') ? (

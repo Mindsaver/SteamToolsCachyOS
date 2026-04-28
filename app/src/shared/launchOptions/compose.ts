@@ -628,6 +628,34 @@ export function cloneModel(model: LaunchOptionsModel): LaunchOptionsModel {
   }
 }
 
+/** Build model from Proton `user_settings.py` env dict (key order preserved). */
+export function modelFromUserSettingsEnv(env: Record<string, string>): LaunchOptionsModel {
+  const model = emptyModel()
+  for (const [k, v] of Object.entries(env)) {
+    model.env[k] = v
+    model.envOrder.push(k)
+  }
+  return model
+}
+
+/** Flatten env for writing `user_settings.py` (respects envOrder then remaining keys). */
+export function userSettingsEnvFromModel(model: LaunchOptionsModel): Record<string, string> {
+  const out: Record<string, string> = {}
+  const seen = new Set<string>()
+  for (const k of model.envOrder) {
+    if (model.env[k] !== undefined) {
+      out[k] = model.env[k]!
+      seen.add(k)
+    }
+  }
+  for (const k of Object.keys(model.env)) {
+    if (!seen.has(k) && model.env[k] !== undefined) {
+      out[k] = model.env[k]!
+    }
+  }
+  return out
+}
+
 // ── Snippet helpers (batch) ────────────────────────────────────────────────
 
 export function mergeSnippetPrefix(current: string, snippet: string): string {

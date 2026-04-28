@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Download,
   RefreshCw,
   FolderOpen,
   FileCode2,
+  FileCog,
   ExternalLink,
   Package,
   Settings,
@@ -83,6 +85,7 @@ function normalizeCompatSettings(s: AppSettings): AppSettings {
 }
 
 export function CompatTools() {
+  const navigate = useNavigate()
   const [provider, setProvider] = useState<CompatProviderId>('ge_proton')
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [steamRunning, setSteamRunning] = useState(false)
@@ -404,7 +407,17 @@ export function CompatTools() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            title="user_settings.py"
+                            title="Edit user_settings in app"
+                            onClick={() =>
+                              navigate(`/proton-user-settings?tool=${encodeURIComponent(row.internalName)}`)
+                            }
+                          >
+                            <FileCog className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="user_settings.py in editor"
                             onClick={() => void api.openCompatUserSettings(row.internalName)}
                           >
                             <FileCode2 className="h-4 w-4" />
