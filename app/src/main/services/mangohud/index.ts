@@ -11,6 +11,14 @@ import {
 } from '../../../shared/mangohudConfig'
 import type {
   MangoHudListBackupsResult,
+  MangoHudProfileApplyMode,
+  MangoHudProfile,
+  MangoHudProfileAssignResult,
+  MangoHudProfileDeleteResult,
+  MangoHudProfileSettingsSaveResult,
+  MangoHudProfileResolveResult,
+  MangoHudProfilesListResult,
+  MangoHudProfileSaveResult,
   MangoHudReadResult,
   MangoHudReloadResult,
   MangoHudSaveResult,
@@ -24,6 +32,19 @@ const BACKUPS_SUBDIR = 'steamtools-mangohud-backups'
 const MAX_BACKUP_BASENAME_LEN = 128
 const PROC_DIR = '/proc'
 
+function resolveProfileStorePath(): string {
+  const fromEnv = process.env['MANGOHUD_PROFILE_STORE_PATH']?.trim()
+  if (fromEnv) return fromEnv
+  return path.join(os.homedir(), '.config', 'MangoHud', 'steamtools-mangohud-profiles.json')
+}
+
+interface MangoHudProfileStore {
+  profiles: MangoHudProfile[]
+  assignments: Record<string, string>
+  applyMode: MangoHudProfileApplyMode
+  defaultProfileId: string | null
+}
+
 function resolveConfigPath(): string {
   const fromEnv = process.env['MANGOHUD_CONFIG_PATH']?.trim()
   if (fromEnv) return fromEnv
@@ -32,6 +53,54 @@ function resolveConfigPath(): string {
 
 function backupsDir(configPath: string): string {
   return path.join(path.dirname(configPath), BACKUPS_SUBDIR)
+}
+
+function now(): number {
+  return Date.now()
+}
+
+function makeProfileId(): string {
+  return `mhp_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`
+}
+
+function readProfileStore(): MangoHudProfileStore {
+  const profileStoreFile = resolveProfileStorePath()
+  try {
+    if (!fs.existsSync(profileStoreFile)) {
+      return { profiles: [], assignments: {}, applyMode: 'manual', defaultProfileId: null }
+    }
+    const parsed = JSON.parse(fs.readFileSync(profileStoreFile, 'utf-8')) as Partial<MangoHudProfileStore>
+    return {
+      profiles: Array.isArray(parsed.profiles) ? parsed.profiles : [],
+      assignments: parsed.assignments && typeof parsed.assignments === 'object' ? parsed.assignments : {},
+      applyMode: parsed.applyMode === 'auto-detect' ? 'auto-detect' : 'manual',
+      defaultProfileId: typeof parsed.defaultProfileId === 'string' ? parsed.defaultProfileId : null,
+    }
+  } catch {
+    return { profiles: [], assignments: {}, applyMode: 'manual', defaultProfileId: null }
+  }
+}
+
+function writeProfileStore(store: MangoHudProfileStore): void {
+  const profileStoreFile = resolveProfileStorePath()
+  fs.mkdirSync(path.dirname(profileStoreFile), { recursive: true })
+  const tmpPath = `${profileStoreFile}.tmp`
+  fs.writeFileSync(tmpPath, JSON.stringify(store, null, 2), 'utf-8')
+  fs.renameSync(tmpPath, profileStoreFile)
+}
+
+function cleanProfileName(name: string): string {
+  return String(name ?? '').trim().slice(0, 120)
+}
+
+function dedupeAssignments(store: MangoHudProfileStore): void {
+  const validIds = new Set(store.profiles.map((p) => p.id))
+  for (const [appId, profileId] of Object.entries(store.assignments)) {
+    if (!/^\d+$/.test(appId) || !validIds.has(profileId)) delete store.assignments[appId]
+  }
+  if (store.defaultProfileId && !validIds.has(store.defaultProfileId)) {
+    store.defaultProfileId = null
+  }
 }
 
 function safeBackupBasename(fileName: string): { ok: true; name: string } | { ok: false; error: string } {
@@ -205,6 +274,125 @@ export async function reloadMangoHudLive(): Promise<MangoHudReloadResult> {
 
 export function parseMangoHudRawText(rawText: string): MangoHudConfigDoc {
   return parseMangoHudConfigText(rawText)
+}
+
+export function listMangoHudProfiles(): MangoHudProfilesListResult {
+  const store = readProfileStore()
+  dedupeAssignments(store)
+  const profiles = [...store.profiles].sort((a, b) => a.name.localeCompare(b.name))
+  return {
+    ok: true,
+    profiles,
+    assignments: store.assignments,
+    applyMode: store.applyMode,
+    defaultProfileId: store.defaultProfileId,
+  }
+}
+
+export function saveMangoHudProfileSettings(payload: {
+  applyMode: MangoHudProfileApplyMode
+  defaultProfileId: string | null
+}): MangoHudProfileSettingsSaveResult {
+  const store = readProfileStore()
+  dedupeAssignments(store)
+  if (payload.defaultProfileId) {
+    const exists = store.profiles.some((profile) => profile.id === payload.defaultProfileId)
+    if (!exists) return { ok: false, error: 'Default profile not found' }
+  }
+  store.applyMode = payload.applyMode === 'auto-detect' ? 'auto-detect' : 'manual'
+  store.defaultProfileId = payload.defaultProfileId ?? null
+  writeProfileStore(store)
+  return { ok: true }
+}
+
+export function saveMangoHudProfile(payload: {
+  id?: string
+  name: string
+  entries: MangoHudConfigEntry[]
+}): MangoHudProfileSaveResult {
+  const store = readProfileStore()
+  const trimmed = cleanProfileName(payload.name)
+  if (!trimmed) return { ok: false, error: 'Profile name is required' }
+  const duplicate = store.profiles.find(
+    (profile) =>
+      profile.name.toLowerCase() === trimmed.toLowerCase() &&
+      (!payload.id || profile.id !== payload.id)
+  )
+  if (duplicate) return { ok: false, error: 'A profile with that name already exists' }
+  const ts = now()
+  const nextEntries = [...(payload.entries ?? [])]
+  if (payload.id) {
+    const idx = store.profiles.findIndex((p) => p.id === payload.id)
+    if (idx < 0) return { ok: false, error: 'Profile not found' }
+    const existing = store.profiles[idx]
+    const next: MangoHudProfile = {
+      ...existing,
+      name: trimmed,
+      entries: nextEntries,
+      updatedAt: ts,
+    }
+    store.profiles[idx] = next
+    writeProfileStore(store)
+    return { ok: true, profile: next }
+  }
+  const created: MangoHudProfile = {
+    id: makeProfileId(),
+    name: trimmed,
+    entries: nextEntries,
+    createdAt: ts,
+    updatedAt: ts,
+  }
+  store.profiles.push(created)
+  writeProfileStore(store)
+  return { ok: true, profile: created }
+}
+
+export function deleteMangoHudProfile(profileId: string): MangoHudProfileDeleteResult {
+  const store = readProfileStore()
+  const before = store.profiles.length
+  store.profiles = store.profiles.filter((p) => p.id !== profileId)
+  if (before === store.profiles.length) return { ok: false, error: 'Profile not found' }
+  for (const appId of Object.keys(store.assignments)) {
+    if (store.assignments[appId] === profileId) delete store.assignments[appId]
+  }
+  writeProfileStore(store)
+  return { ok: true }
+}
+
+export function assignMangoHudProfile(appId: number, profileId: string | null): MangoHudProfileAssignResult {
+  if (!Number.isInteger(appId) || appId <= 0) return { ok: false, error: 'Invalid app id' }
+  const store = readProfileStore()
+  const appKey = String(appId)
+  if (!profileId) {
+    delete store.assignments[appKey]
+    writeProfileStore(store)
+    return { ok: true }
+  }
+  const profile = store.profiles.find((p) => p.id === profileId)
+  if (!profile) return { ok: false, error: 'Profile not found' }
+  store.assignments[appKey] = profile.id
+  writeProfileStore(store)
+  return { ok: true }
+}
+
+export function resolveMangoHudProfileForApp(appId: number): MangoHudProfileResolveResult {
+  if (!Number.isInteger(appId) || appId <= 0) return { ok: false, error: 'Invalid app id' }
+  const store = readProfileStore()
+  dedupeAssignments(store)
+  if (store.applyMode === 'manual') {
+    const manual = store.defaultProfileId ? store.profiles.find((p) => p.id === store.defaultProfileId) ?? null : null
+    return manual ? { ok: true, profile: manual, source: 'manual' } : { ok: true, profile: null, source: 'none' }
+  }
+  const specificProfileId = store.assignments[String(appId)]
+  if (specificProfileId) {
+    const profile = store.profiles.find((p) => p.id === specificProfileId) ?? null
+    if (profile) return { ok: true, profile, source: 'specific' }
+  }
+  if (store.defaultProfileId) {
+    const fallback = store.profiles.find((p) => p.id === store.defaultProfileId) ?? null
+    if (fallback) return { ok: true, profile: fallback, source: 'default' }
+  }
+  return { ok: true, profile: null, source: 'none' }
 }
 
 function formatRuntimeHudText(status: RunningFsrStatus, style: MangoHudRuntimeTextStyle): string {

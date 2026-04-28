@@ -78,12 +78,18 @@ import {
   testMongoHudConnection,
 } from './services/mongoHud'
 import {
+  assignMangoHudProfile,
+  deleteMangoHudProfile,
   getMangoHudStatus,
+  listMangoHudProfiles,
   listMangoHudBackups,
   readMangoHudBackup,
   readMangoHudConfig,
   reloadMangoHudLive,
+  resolveMangoHudProfileForApp,
   restoreMangoHudBackup,
+  saveMangoHudProfile,
+  saveMangoHudProfileSettings,
   saveMangoHudConfig,
   syncRuntimeFsrTextToMangoHud,
 } from './services/mangohud'
@@ -620,6 +626,22 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.MANGOHUD_BACKUPS_LIST, () => listMangoHudBackups())
   ipcMain.handle(IPC.MANGOHUD_BACKUPS_READ, (_e, fileName: string) => readMangoHudBackup(fileName))
   ipcMain.handle(IPC.MANGOHUD_BACKUPS_RESTORE, (_e, fileName: string) => restoreMangoHudBackup(fileName))
+  ipcMain.handle(IPC.MANGOHUD_PROFILES_LIST, () => listMangoHudProfiles())
+  ipcMain.handle(
+    IPC.MANGOHUD_PROFILES_SAVE,
+    (_e, payload: { id?: string; name: string; entries: MangoHudConfigEntry[] }) => saveMangoHudProfile(payload)
+  )
+  ipcMain.handle(IPC.MANGOHUD_PROFILES_DELETE, (_e, profileId: string) => deleteMangoHudProfile(profileId))
+  ipcMain.handle(
+    IPC.MANGOHUD_PROFILES_ASSIGN,
+    (_e, payload: { appId: number; profileId: string | null }) => assignMangoHudProfile(payload.appId, payload.profileId)
+  )
+  ipcMain.handle(IPC.MANGOHUD_PROFILES_RESOLVE_FOR_APP, (_e, appId: number) => resolveMangoHudProfileForApp(appId))
+  ipcMain.handle(
+    IPC.MANGOHUD_PROFILES_SAVE_SETTINGS,
+    (_e, payload: { applyMode: 'manual' | 'auto-detect'; defaultProfileId: string | null }) =>
+      saveMangoHudProfileSettings(payload)
+  )
 
   // ── Mongo HUD editor ────────────────────────────────────────────────────────
 

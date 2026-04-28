@@ -38,6 +38,14 @@ import type {
   MangoHudSaveResult,
   MangoHudStatus,
   MangoHudRuntimeTextStyle,
+  MangoHudProfilesListResult,
+  MangoHudProfileSaveResult,
+  MangoHudProfileDeleteResult,
+  MangoHudProfileAssignResult,
+  MangoHudProfileResolveResult,
+  MangoHudProfileApplyMode,
+  MangoHudProfileSettingsSaveResult,
+  MangoHudProfile,
   RunningFsrStatus,
 } from '../shared/types'
 import { parseMangoHudConfigText, serializeMangoHudEntries } from '../shared/mangohudConfig'
@@ -127,6 +135,10 @@ const simMongoDocs = new Map<string, HudDocument>()
 const simMongoVersions = new Map<string, Array<HudVersionMeta & { snapshot: HudDocument }>>()
 let simMangoHudRaw = 'fps=1\nframetime=1\nposition=top-left'
 const simMangoHudBackups = new Map<string, { rawText: string; mtimeMs: number }>()
+const simMangoHudProfiles = new Map<string, MangoHudProfile>()
+const simMangoHudAssignments = new Map<number, string>()
+let simMangoHudApplyMode: MangoHudProfileApplyMode = 'manual'
+let simMangoHudDefaultProfileId: string | null = null
 
 export const mockApi = {
   __simMode: true as const,
@@ -453,6 +465,103 @@ export const mockApi = {
     if (!v) return { ok: false, error: 'Backup not found' }
     simMangoHudRaw = v.rawText
     return { ok: true, configPath: '/home/arch/.config/MangoHud/MangoHud.conf' }
+  },
+  listMangoHudProfiles: async (): Promise<MangoHudProfilesListResult> => {
+    await delay(30)
+    const profiles = [...simMangoHudProfiles.values()].sort((a, b) => a.name.localeCompare(b.name))
+    const assignments: Record<string, string> = {}
+    for (const [appId, profileId] of simMangoHudAssignments.entries()) assignments[String(appId)] = profileId
+    if (simMangoHudDefaultProfileId && !simMangoHudProfiles.has(simMangoHudDefaultProfileId)) {
+      simMangoHudDefaultProfileId = null
+    }
+    return {
+      ok: true,
+      profiles,
+      assignments,
+      applyMode: simMangoHudApplyMode,
+      defaultProfileId: simMangoHudDefaultProfileId,
+    }
+  },
+  saveMangoHudProfile: async (payload: {
+    id?: string
+    name: string
+    entries: MangoHudConfigEntry[]
+  }): Promise<MangoHudProfileSaveResult> => {
+    await delay(30)
+    const trimmed = payload.name.trim()
+    if (!trimmed) return { ok: false, error: 'Profile name is required' }
+    for (const profile of simMangoHudProfiles.values()) {
+      if (profile.name.toLowerCase() === trimmed.toLowerCase() && profile.id !== payload.id) {
+        return { ok: false, error: 'A profile with that name already exists' }
+      }
+    }
+    const ts = Date.now()
+    if (payload.id) {
+      const existing = simMangoHudProfiles.get(payload.id)
+      if (!existing) return { ok: false, error: 'Profile not found' }
+      const next: MangoHudProfile = { ...existing, name: trimmed, entries: payload.entries, updatedAt: ts }
+      simMangoHudProfiles.set(next.id, next)
+      return { ok: true, profile: next }
+    }
+    const created: MangoHudProfile = {
+      id: `mhp_${Math.random().toString(36).slice(2, 9)}`,
+      name: trimmed,
+      entries: payload.entries,
+      createdAt: ts,
+      updatedAt: ts,
+    }
+    simMangoHudProfiles.set(created.id, created)
+    return { ok: true, profile: created }
+  },
+  deleteMangoHudProfile: async (profileId: string): Promise<MangoHudProfileDeleteResult> => {
+    await delay(20)
+    if (!simMangoHudProfiles.has(profileId)) return { ok: false, error: 'Profile not found' }
+    simMangoHudProfiles.delete(profileId)
+    for (const [appId, assigned] of simMangoHudAssignments.entries()) {
+      if (assigned === profileId) simMangoHudAssignments.delete(appId)
+    }
+    if (simMangoHudDefaultProfileId === profileId) simMangoHudDefaultProfileId = null
+    return { ok: true }
+  },
+  assignMangoHudProfile: async (payload: {
+    appId: number
+    profileId: string | null
+  }): Promise<MangoHudProfileAssignResult> => {
+    await delay(20)
+    if (payload.appId <= 0 || !Number.isFinite(payload.appId)) return { ok: false, error: 'Invalid app id' }
+    if (!payload.profileId) {
+      simMangoHudAssignments.delete(payload.appId)
+      return { ok: true }
+    }
+    if (!simMangoHudProfiles.has(payload.profileId)) return { ok: false, error: 'Profile not found' }
+    simMangoHudAssignments.set(payload.appId, payload.profileId)
+    return { ok: true }
+  },
+  getMangoHudProfileForApp: async (appId: number): Promise<MangoHudProfileResolveResult> => {
+    await delay(20)
+    if (simMangoHudApplyMode === 'manual') {
+      const profile = simMangoHudDefaultProfileId ? simMangoHudProfiles.get(simMangoHudDefaultProfileId) ?? null : null
+      return { ok: true, profile, source: profile ? 'manual' : 'none' }
+    }
+    const profileId = simMangoHudAssignments.get(appId)
+    if (profileId) {
+      const specific = simMangoHudProfiles.get(profileId) ?? null
+      if (specific) return { ok: true, profile: specific, source: 'specific' }
+    }
+    const fallback = simMangoHudDefaultProfileId ? simMangoHudProfiles.get(simMangoHudDefaultProfileId) ?? null : null
+    return fallback ? { ok: true, profile: fallback, source: 'default' } : { ok: true, profile: null, source: 'none' }
+  },
+  saveMangoHudProfileSettings: async (payload: {
+    applyMode: MangoHudProfileApplyMode
+    defaultProfileId: string | null
+  }): Promise<MangoHudProfileSettingsSaveResult> => {
+    await delay(20)
+    if (payload.defaultProfileId && !simMangoHudProfiles.has(payload.defaultProfileId)) {
+      return { ok: false, error: 'Default profile not found' }
+    }
+    simMangoHudApplyMode = payload.applyMode === 'auto-detect' ? 'auto-detect' : 'manual'
+    simMangoHudDefaultProfileId = payload.defaultProfileId ?? null
+    return { ok: true }
   },
 
   listMongoHudConnections: async (): Promise<MongoConnectionProfile[]> => {

@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { RefreshCw, Save, Zap, ArchiveRestore } from 'lucide-react'
+import { RefreshCw, Save, ArchiveRestore, Plus, Trash2, WandSparkles } from 'lucide-react'
 import { api } from '../lib/ipc'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
@@ -8,8 +8,16 @@ import { Textarea } from '../components/ui/textarea'
 import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import { Switch } from '../components/ui/switch'
+import { Badge } from '../components/ui/badge'
 import { parseMangoHudConfigText, mergeMangoHudEntry, serializeMangoHudEntries } from '../../shared/mangohudConfig'
-import type { MangoHudConfigEntry, MangoHudRuntimeTextStyle, RunningFsrStatus } from '../../shared/types'
+import type {
+  InstalledGame,
+  MangoHudConfigEntry,
+  MangoHudProfile,
+  MangoHudProfileApplyMode,
+  MangoHudRuntimeTextStyle,
+  RunningFsrStatus,
+} from '../../shared/types'
 
 type FieldType = 'boolean' | 'number' | 'string' | 'list' | 'color' | 'select'
 type ListKind = 'color-list' | 'number-list' | 'string-list'
@@ -251,11 +259,22 @@ function normalizeNumberToken(value: string): string {
 export function MangoHudLive() {
   const [entries, setEntries] = useState<MangoHudConfigEntry[]>([])
   const [rawText, setRawText] = useState('')
+  const [games, setGames] = useState<InstalledGame[]>([])
   const [statusText, setStatusText] = useState('Checking status…')
   const [configPath, setConfigPath] = useState('')
   const [backups, setBackups] = useState<Array<{ fileName: string; mtimeMs: number }>>([])
   const [selectedBackup, setSelectedBackup] = useState('')
   const [backupName, setBackupName] = useState('')
+  const [profiles, setProfiles] = useState<MangoHudProfile[]>([])
+  const [assignments, setAssignments] = useState<Record<string, string>>({})
+  const [profileApplyMode, setProfileApplyMode] = useState<MangoHudProfileApplyMode>('manual')
+  const [defaultProfileId, setDefaultProfileId] = useState<string | null>(null)
+  const [selectedProfileId, setSelectedProfileId] = useState('')
+  const [profileNameInput, setProfileNameInput] = useState('')
+  const [quickAppId, setQuickAppId] = useState('')
+  const [profilesExpanded, setProfilesExpanded] = useState(false)
+  const [createSuccess, setCreateSuccess] = useState<{ profileId: string; appId: number } | null>(null)
+  const syncingFromRawRef = useRef(false)
   const [runtimeFsr, setRuntimeFsr] = useState<RunningFsrStatus | null>(null)
   const [autoRefreshRuntime, setAutoRefreshRuntime] = useState<boolean>(() => {
     try {
@@ -276,6 +295,22 @@ export function MangoHudLive() {
   const refreshRuntime = async () => {
     const s = await api.getRunningFsrStatus()
     setRuntimeFsr(s)
+  }
+
+  const listProfiles = async () => {
+    const result = await api.listMangoHudProfiles()
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    setProfiles(result.profiles)
+    setAssignments(result.assignments)
+    setProfileApplyMode(result.applyMode)
+    setDefaultProfileId(result.defaultProfileId)
+    setSelectedProfileId((prev) => {
+      if (prev && result.profiles.some((profile) => profile.id === prev)) return prev
+      return result.profiles[0]?.id ?? ''
+    })
   }
 
   const saveThenReload = async (payload: {
@@ -300,10 +335,11 @@ export function MangoHudLive() {
   }
 
   const loadAll = async () => {
-    const [status, cfg, b] = await Promise.all([
+    const [status, cfg, b, listedGames] = await Promise.all([
       api.getMangoHudStatus(),
       api.getMangoHudConfig(),
       api.listMangoHudBackups(),
+      api.listGames(),
     ])
     setStatusText(
       status.configExists
@@ -318,12 +354,20 @@ export function MangoHudLive() {
       toast.error(cfg.error)
     }
     if (b.ok) setBackups(b.entries)
+    setGames(listedGames)
   }
 
   useEffect(() => {
     void loadAll()
     void refreshRuntime()
+    void listProfiles()
   }, [])
+
+  useEffect(() => {
+    if (runtimeFsr?.detectedAppId && !quickAppId) {
+      setQuickAppId(String(runtimeFsr.detectedAppId))
+    }
+  }, [runtimeFsr?.detectedAppId, quickAppId])
 
   useEffect(() => {
     if (!autoRefreshRuntime) return
@@ -351,6 +395,15 @@ export function MangoHudLive() {
     setEntries((prev) => mergeMangoHudEntry(prev, item.key, value))
   }
 
+  useEffect(() => {
+    if (syncingFromRawRef.current) {
+      syncingFromRawRef.current = false
+      return
+    }
+    const nextRaw = serializeMangoHudEntries(entries)
+    if (nextRaw !== rawText) setRawText(nextRaw)
+  }, [entries, rawText])
+
   const getWarning = (item: CatalogItem, value: string): string | null => {
     if (!value) return null
     if (item.type === 'number') {
@@ -368,6 +421,209 @@ export function MangoHudLive() {
 
   const entryMap = useMemo(() => new Map(entries.map((e) => [e.key, e.value])), [entries])
   const catalogByKey = useMemo(() => new Map(CATALOG.map((item) => [item.key, item])), [])
+  const selectedProfile = useMemo(
+    () => profiles.find((profile) => profile.id === selectedProfileId) ?? null,
+    [profiles, selectedProfileId]
+  )
+  const sortedGames = useMemo(() => [...games].sort((a, b) => a.name.localeCompare(b.name)), [games])
+  const appIdNumber = Number(quickAppId)
+  const appIdValid = Number.isInteger(appIdNumber) && appIdNumber > 0
+  const assignedProfileId = appIdValid ? assignments[String(appIdNumber)] ?? '' : ''
+  const assignedProfileName = profiles.find((profile) => profile.id === assignedProfileId)?.name ?? null
+  const defaultProfileName = defaultProfileId
+    ? profiles.find((profile) => profile.id === defaultProfileId)?.name ?? null
+    : null
+
+  const suggestUniqueProfileName = (baseName: string): string => {
+    const base = baseName.trim() || 'New profile'
+    const names = new Set(profiles.map((profile) => profile.name.toLowerCase()))
+    if (!names.has(base.toLowerCase())) return base
+    let idx = 2
+    let candidate = `${base} (${idx})`
+    while (names.has(candidate.toLowerCase())) {
+      idx += 1
+      candidate = `${base} (${idx})`
+    }
+    return candidate
+  }
+
+  const applyProfile = (profile: MangoHudProfile) => {
+    setEntries(profile.entries)
+    setRawText(serializeMangoHudEntries(profile.entries))
+    setSelectedProfileId(profile.id)
+    setProfileNameInput(profile.name)
+  }
+
+  const createProfile = async (payload: { name: string; source: MangoHudConfigEntry[] }) => {
+    const suggested = suggestUniqueProfileName(payload.name)
+    const saved = await api.saveMangoHudProfile({
+      name: suggested,
+      entries: payload.source,
+    })
+    if (!saved.ok) {
+      toast.error(saved.error)
+      return null
+    }
+    await listProfiles()
+    setSelectedProfileId(saved.profile.id)
+    setProfileNameInput(saved.profile.name)
+    return saved.profile
+  }
+
+  const handleSaveProfileFromCurrent = async () => {
+    if (!selectedProfile) {
+      toast.error('Select a profile first')
+      return
+    }
+    const save = await api.saveMangoHudProfile({
+      id: selectedProfile.id,
+      name: profileNameInput.trim() || selectedProfile.name,
+      entries,
+    })
+    if (!save.ok) return toast.error(save.error)
+    toast.success('Profile saved from current structured settings')
+    await listProfiles()
+  }
+
+  const handleRenameProfile = async () => {
+    if (!selectedProfile) {
+      toast.error('Select a profile first')
+      return
+    }
+    const name = profileNameInput.trim()
+    if (!name) {
+      toast.error('Profile name is required')
+      return
+    }
+    const save = await api.saveMangoHudProfile({
+      id: selectedProfile.id,
+      name,
+      entries: selectedProfile.entries,
+    })
+    if (!save.ok) return toast.error(save.error)
+    toast.success('Profile renamed')
+    await listProfiles()
+  }
+
+  const handleDeleteProfile = async () => {
+    if (!selectedProfile) {
+      toast.error('Select a profile first')
+      return
+    }
+    const confirmed = window.confirm(
+      `Delete profile "${selectedProfile.name}"? Assigned games will be unassigned.`
+    )
+    if (!confirmed) return
+    const result = await api.deleteMangoHudProfile(selectedProfile.id)
+    if (!result.ok) return toast.error(result.error)
+    toast.success('Profile deleted')
+    setProfileNameInput('')
+    await listProfiles()
+  }
+
+  const handleAssignProfile = async (profileId: string | null) => {
+    if (!appIdValid) {
+      toast.error('Enter a valid AppID first')
+      return
+    }
+    const result = await api.assignMangoHudProfile({ appId: appIdNumber, profileId })
+    if (!result.ok) return toast.error(result.error)
+    toast.success(profileId ? 'Profile assigned to game' : 'Profile unassigned from game')
+    await listProfiles()
+  }
+
+  const handleSaveProfileSettings = async (nextMode: MangoHudProfileApplyMode, nextDefaultProfileId: string | null) => {
+    const result = await api.saveMangoHudProfileSettings({
+      applyMode: nextMode,
+      defaultProfileId: nextDefaultProfileId,
+    })
+    if (!result.ok) {
+      toast.error(result.error)
+      return false
+    }
+    setProfileApplyMode(nextMode)
+    setDefaultProfileId(nextDefaultProfileId)
+    await listProfiles()
+    return true
+  }
+
+  const handleModeChange = async (nextMode: MangoHudProfileApplyMode) => {
+    const ok = await handleSaveProfileSettings(nextMode, defaultProfileId)
+    if (ok) toast.success(nextMode === 'manual' ? 'Manual override mode enabled' : 'Auto-detect mode enabled')
+  }
+
+  const handleDefaultProfileChange = async (nextDefaultProfileId: string | null) => {
+    const ok = await handleSaveProfileSettings(profileApplyMode, nextDefaultProfileId)
+    if (ok) toast.success(nextDefaultProfileId ? 'Default profile updated' : 'Default profile cleared')
+  }
+
+  const handleAutoAssignDetected = async () => {
+    if (!selectedProfileId) {
+      toast.error('Select a profile first')
+      return
+    }
+    const detectedAppId = runtimeFsr?.detectedAppId
+    if (!detectedAppId) {
+      toast.error('No detected AppID available')
+      return
+    }
+    const result = await api.assignMangoHudProfile({ appId: detectedAppId, profileId: selectedProfileId })
+    if (!result.ok) return toast.error(result.error)
+    toast.success(`Assigned profile to detected AppID ${detectedAppId}`)
+    setQuickAppId(String(detectedAppId))
+    await listProfiles()
+  }
+
+  const handleQuickCreateForGame = async () => {
+    if (!appIdValid) {
+      toast.error('Enter a valid AppID first')
+      return
+    }
+    const gameLabel = sortedGames.find((game) => game.appId === appIdNumber)?.name ?? `App ${appIdNumber}`
+    const customName = profileNameInput.trim()
+    const baseName = customName ? `${gameLabel} - ${customName}` : `${gameLabel} - Profile`
+    const profile = await createProfile({ name: baseName, source: entries })
+    if (!profile) return
+    const assigned = await api.assignMangoHudProfile({ appId: appIdNumber, profileId: profile.id })
+    if (!assigned.ok) return toast.error(assigned.error)
+    setCreateSuccess({ profileId: profile.id, appId: appIdNumber })
+    toast.success('Profile created and assigned')
+    await listProfiles()
+  }
+
+  useEffect(() => {
+    if (selectedProfile && !profileNameInput.trim()) {
+      setProfileNameInput(selectedProfile.name)
+    }
+  }, [selectedProfile, profileNameInput])
+
+  const mappingRows = useMemo(() => {
+    return sortedGames.map((game) => {
+      const specificId = assignments[String(game.appId)] ?? null
+      const specificProfile = specificId ? profiles.find((profile) => profile.id === specificId) ?? null : null
+      let resolved: MangoHudProfile | null = null
+      let source: 'specific' | 'default' | 'manual' | 'none' = 'none'
+      if (profileApplyMode === 'manual') {
+        resolved = defaultProfileId ? profiles.find((profile) => profile.id === defaultProfileId) ?? null : null
+        source = resolved ? 'manual' : 'none'
+      } else {
+        if (specificProfile) {
+          resolved = specificProfile
+          source = 'specific'
+        } else if (defaultProfileId) {
+          resolved = profiles.find((profile) => profile.id === defaultProfileId) ?? null
+          source = resolved ? 'default' : 'none'
+        }
+      }
+      return {
+        appId: game.appId,
+        gameName: game.name,
+        specificProfileName: specificProfile?.name ?? '—',
+        resolvedProfileName: resolved?.name ?? '—',
+        source,
+      }
+    })
+  }, [assignments, defaultProfileId, profileApplyMode, profiles, sortedGames])
 
   const setListTokens = (item: CatalogItem, tokens: string[]) => {
     const normalized = tokens.map((token) => {
@@ -573,212 +829,399 @@ export function MangoHudLive() {
   }
 
   return (
-    <div className="h-full min-h-0 flex flex-col p-4 gap-3 overflow-y-auto">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg">MangoHud Live Config</CardTitle>
+    <div className="h-full min-h-0 flex flex-col p-4 gap-3 overflow-y-auto bg-muted/20">
+      <Card className="sticky top-0 z-20 border-border/80 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/90">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-lg">MangoHud Live Config</CardTitle>
+            <Badge variant="secondary">Catalog editor</Badge>
+          </div>
         </CardHeader>
         <CardContent className="space-y-2">
           <p className="text-sm text-muted-foreground">{statusText}</p>
           <p className="text-xs font-mono text-muted-foreground break-all">{configPath}</p>
-          <div className="rounded border border-border/60 bg-muted/30 px-2 py-1.5 text-xs">
-            <p className="font-medium">Runtime FSR: {runtimeFsr?.label ?? 'Loading…'}</p>
-            <p className="text-muted-foreground">
-              Confidence: {runtimeFsr?.confidence ?? '—'}
-              {runtimeFsr?.sourcePath ? ` · Source: ${runtimeFsr.sourcePath}` : ''}
-            </p>
-            <p className="text-muted-foreground">
-              Indicator: {runtimeFsr?.indicatorRequested ? 'requested' : 'not requested'} · Runtime DLL:{' '}
-              {runtimeFsr?.dllLoaded ? 'loaded' : 'not loaded'} · Likely active: {runtimeFsr?.likelyActive ? 'yes' : 'no'}
-            </p>
-            <p className="text-muted-foreground">
-              Detected AppID: {runtimeFsr?.detectedAppId ?? '—'} · PID: {runtimeFsr?.detectedGamePid ?? '—'} · Source kind:{' '}
-              {runtimeFsr?.dllPathKind ?? '—'}
-            </p>
-            <p className="text-muted-foreground">
-              Mapped: FSR {runtimeFsr?.mappedDlls.fsr.length ?? 0} · DLSS {runtimeFsr?.mappedDlls.dlss.length ?? 0} · XeSS{' '}
-              {runtimeFsr?.mappedDlls.xess.length ?? 0}
-            </p>
-            <p className="text-muted-foreground">
-              FSR version: {runtimeFsr?.fsrVersion ?? '—'} · ML FI version: {runtimeFsr?.mlfiVersion ?? '—'} · Frame Gen version:{' '}
-              {runtimeFsr?.framegenVersion ?? '—'}
-            </p>
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <Button size="sm" variant="outline" onClick={() => void loadAll()}>
-              <RefreshCw className="h-3.5 w-3.5 mr-1" />
-              Refresh
-            </Button>
-            <Button
-              size="sm"
-              onClick={() =>
-                void saveThenReload({ entries, makeNamedBackup: backupName.trim() || null })
-                  .then(() => loadAll())
-              }
-            >
-              <Save className="h-3.5 w-3.5 mr-1" />
-              Save structured
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() =>
-                void api.reloadMangoHud().then((r) => (r.ok ? toast.success(r.message) : toast.error(r.error)))
-              }
-            >
-              <Zap className="h-3.5 w-3.5 mr-1" />
-              Reload live
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void refreshRuntime()}
-            >
-              Runtime refresh
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                void api.syncRunningFsrToMangoHud(undefined, runtimeTextStyle).then((r) =>
-                  r.ok ? toast.success(r.message) : toast.error(r.error)
-                )
-              }
-            >
-              Sync runtime text to HUD
-            </Button>
-            <div className="inline-flex items-center gap-2 rounded border border-border/60 px-2 py-1 text-xs">
-              <span className="text-muted-foreground">Runtime text style</span>
-              <Select
-                value={runtimeTextStyle}
-                onChange={(e) => {
-                  const next = e.target.value as MangoHudRuntimeTextStyle
-                  setRuntimeTextStyle(next)
-                  try {
-                    window.localStorage.setItem(MANGOHUD_TEXT_STYLE_KEY, next)
-                  } catch {
-                    // ignore storage errors
-                  }
-                }}
+          <div className="rounded-lg border border-border/70 bg-background p-2.5">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Save controls</p>
+            <div className="flex gap-2 flex-wrap items-center">
+              <Button size="sm" variant="outline" onClick={() => void loadAll()}>
+                <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                Refresh
+              </Button>
+              <Button
+                size="sm"
+                onClick={() =>
+                  void saveThenReload({ entries, makeNamedBackup: backupName.trim() || null })
+                    .then(() => loadAll())
+                }
               >
-                <option value="full-stack">full-stack</option>
-                <option value="fsr-only">fsr-only</option>
-                <option value="status-only">status-only</option>
-                <option value="compact">compact</option>
-              </Select>
+                <Save className="h-3.5 w-3.5 mr-1" />
+                Save structured
+              </Button>
+              <Input
+                className="h-8 w-56"
+                value={backupName}
+                onChange={(e) => setBackupName(e.target.value)}
+                placeholder="Optional backup name"
+              />
             </div>
-            <label className="inline-flex items-center gap-2 rounded border border-border/60 px-2 py-1 text-xs text-muted-foreground">
-              <Switch checked={autoRefreshRuntime} onCheckedChange={toggleAutoSync} />
-              Auto refresh + HUD sync
-            </label>
-            <Input
-              className="h-8 w-56"
-              value={backupName}
-              onChange={(e) => setBackupName(e.target.value)}
-              placeholder="Optional backup name"
-            />
+          </div>
+
+          <div className="rounded-lg border border-border/70 bg-background p-2.5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Profiles</p>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setProfilesExpanded((v) => !v)}
+              >
+                {profilesExpanded ? 'Hide advanced' : 'Expand'}
+              </button>
+            </div>
+            {!profilesExpanded ? (
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Expand to manage the profile library, per-game assignments, detection shortcuts, and the mapping table.
+              </p>
+            ) : null}
+            {profilesExpanded ? (
+              <div className="space-y-2 pt-0.5">
+                <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(220px,1fr)_minmax(220px,1fr)_auto] gap-2 items-center">
+                  <Select
+                    value={profileApplyMode}
+                    onChange={(e) => void handleModeChange(e.target.value as MangoHudProfileApplyMode)}
+                  >
+                    <option value="manual">Manual override</option>
+                    <option value="auto-detect">Auto detect</option>
+                  </Select>
+                  <Select
+                    value={defaultProfileId ?? ''}
+                    onChange={(e) => {
+                      const nextId = e.target.value || null
+                      void handleDefaultProfileChange(nextId)
+                    }}
+                  >
+                    <option value="">Default profile…</option>
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select
+                    value={selectedProfileId}
+                    onChange={(e) => {
+                      const nextId = e.target.value
+                      setSelectedProfileId(nextId)
+                      const selected = profiles.find((profile) => profile.id === nextId)
+                      setProfileNameInput(selected?.name ?? '')
+                    }}
+                  >
+                    <option value="">Select profile…</option>
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleAutoAssignDetected()}
+                    disabled={profileApplyMode !== 'auto-detect' || !selectedProfileId || !runtimeFsr?.detectedAppId}
+                  >
+                    <WandSparkles className="h-3.5 w-3.5 mr-1" />
+                    Auto set from game detection
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2 items-center">
+                  {runtimeFsr?.detectedAppId ? <Badge variant="outline">Detected AppID {runtimeFsr.detectedAppId}</Badge> : null}
+                  {defaultProfileName ? <Badge variant="outline">Default: {defaultProfileName}</Badge> : null}
+                  {assignedProfileName ? <Badge variant="outline">Selected game specific: {assignedProfileName}</Badge> : null}
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-2">
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground font-medium">Match existing profile to game</p>
+                    <div className="flex gap-2 flex-wrap">
+                      <Button size="sm" variant="outline" onClick={() => selectedProfile && applyProfile(selectedProfile)} disabled={!selectedProfile}>
+                        Apply now
+                      </Button>
+                      <Select value={quickAppId} onChange={(e) => setQuickAppId(e.target.value)} className="min-w-[220px]">
+                        <option value="">Select game to match…</option>
+                        {sortedGames.map((game) => (
+                          <option key={game.appId} value={String(game.appId)}>
+                            {game.name} ({game.appId})
+                          </option>
+                        ))}
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleAssignProfile(selectedProfileId || null)}
+                        disabled={!selectedProfileId || !appIdValid}
+                      >
+                        Match selected profile
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => void handleAssignProfile(null)} disabled={!appIdValid || !assignedProfileId}>
+                        Unassign game
+                      </Button>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <Input
+                        className="h-8 w-56"
+                        value={profileNameInput}
+                        onChange={(e) => setProfileNameInput(e.target.value)}
+                        placeholder="Profile name"
+                      />
+                      <Button size="sm" variant="outline" onClick={() => void handleRenameProfile()} disabled={!selectedProfile}>
+                        Rename
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => void handleSaveProfileFromCurrent()} disabled={!selectedProfile}>
+                        Save current to profile
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => void handleDeleteProfile()} disabled={!selectedProfile}>
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded border border-border/60 p-2">
+                    <p className="text-xs text-muted-foreground font-medium">Create profile for this game</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <Select value={quickAppId} onChange={(e) => setQuickAppId(e.target.value)}>
+                        <option value="">Select game / AppID…</option>
+                        {sortedGames.map((game) => (
+                          <option key={game.appId} value={String(game.appId)}>
+                            {game.name} ({game.appId})
+                          </option>
+                        ))}
+                      </Select>
+                      <Input value={quickAppId} onChange={(e) => setQuickAppId(e.target.value)} placeholder="Manual AppID" />
+                    </div>
+                    <Input
+                      value={profileNameInput}
+                      onChange={(e) => setProfileNameInput(e.target.value)}
+                      placeholder={appIdValid ? 'Profile suffix (game name auto-added)' : 'Profile suffix'}
+                    />
+                    <div className="flex gap-2 flex-wrap">
+                      <Button size="sm" onClick={() => void handleQuickCreateForGame()} disabled={!appIdValid}>
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        Create + assign
+                      </Button>
+                    </div>
+                    {createSuccess ? (
+                      <div className="rounded border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs">
+                        <p className="font-medium">Profile created and assigned.</p>
+                        <div className="mt-1 flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => {
+                            const p = profiles.find((x) => x.id === createSuccess.profileId)
+                            if (p) applyProfile(p)
+                          }}>
+                            Apply now
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setCreateSuccess(null)}>
+                            Dismiss
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                <Card className="border-border/70 bg-background">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Game profile mapping</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="max-h-64 overflow-auto rounded border border-border/60">
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/30 sticky top-0">
+                          <tr>
+                            <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Game</th>
+                            <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Specific profile</th>
+                            <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Resolved profile</th>
+                            <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Source</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mappingRows.map((row) => (
+                            <tr key={row.appId} className="border-t border-border/40">
+                              <td className="px-2 py-1.5">
+                                <div className="font-medium">{row.gameName}</div>
+                                <div className="text-muted-foreground">AppID {row.appId}</div>
+                              </td>
+                              <td className="px-2 py-1.5">{row.specificProfileName}</td>
+                              <td className="px-2 py-1.5">{row.resolvedProfileName}</td>
+                              <td className="px-2 py-1.5">
+                                <Badge variant="outline">{row.source}</Badge>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : null}
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] gap-3">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)] gap-3">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Full MangoHud Catalog</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {groupedCatalog().map(([section, items]) => (
-              <div key={section} className="space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{section}</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {items.map((item) => {
-                    if (item.pairRole === 'color' && item.pairWith) return null
-                    const value = entryMap.get(item.key) ?? (item.type === 'boolean' ? '0' : '')
-                    const warning = getWarning(item, value)
-                    const showStandardLabel = !(item.type === 'list' && item.pairRole === 'threshold' && item.pairWith)
-                    const isPairedThreshold = item.type === 'list' && item.pairRole === 'threshold' && item.pairWith
-                    return (
-                      <div key={item.key} className={`space-y-1 ${isPairedThreshold ? 'md:col-span-2' : ''}`}>
-                        {showStandardLabel && <label className="text-xs text-muted-foreground">{item.label}</label>}
-                        {item.type === 'boolean' && (
-                          <Select value={value} onChange={(e) => setKey(item, e.target.value)}>
-                            <option value="1">Enabled</option>
-                            <option value="0">Disabled</option>
-                          </Select>
-                        )}
-                        {item.type === 'select' && (
-                          <Select value={value} onChange={(e) => setKey(item, e.target.value)}>
-                            {(item.options ?? []).map((opt) => (
-                              <option key={opt} value={opt}>
-                                {opt}
-                              </option>
-                            ))}
-                            {value && !item.options?.includes(value) && <option value={value}>{value} (custom)</option>}
-                          </Select>
-                        )}
-                        {item.type === 'number' && (
-                          <Input
-                            type="number"
-                            min={item.min}
-                            max={item.max}
-                            step={item.step}
-                            value={value}
-                            onChange={(e) => setKey(item, e.target.value)}
-                          />
-                        )}
-                        {item.type === 'list' && (
-                          <>
-                            {item.pairRole === 'threshold' && item.pairWith
-                              ? renderPairedThresholdColorField(item, value)
-                              : item.listKind === 'color-list'
-                                ? renderColorListField(item, value)
-                                : item.listKind === 'number-list'
-                                  ? renderNumberListField(item, value)
-                                  : (
-                                    <Input
-                                      value={value}
-                                      onChange={(e) =>
-                                        setKey(
-                                          item,
-                                          e.target.value
-                                            .split(',')
-                                            .map((x) => x.trim())
-                                            .filter(Boolean)
-                                            .join(',')
-                                        )
-                                      }
-                                      placeholder="comma,separated,values"
-                                    />
-                                  )}
-                          </>
-                        )}
-                        {item.type === 'color' && (
-                          <div className="flex items-center gap-2">
-                            <Input
-                              type="color"
-                              className="h-9 w-12 p-1"
-                              value={toColorHex(value)}
-                              onChange={(e) => setKey(item, e.target.value)}
-                            />
-                            <Input value={value} onChange={(e) => setKey(item, e.target.value)} placeholder="RRGGBB" />
-                          </div>
-                        )}
-                        {item.type === 'string' && <Input value={value} onChange={(e) => setKey(item, e.target.value)} />}
-                        {item.help && <p className="text-[11px] text-muted-foreground">{item.help}</p>}
-                        {warning && <p className="text-[11px] text-amber-600">{warning}</p>}
-                      </div>
-                    )
-                  })}
+            <Card className="border-border/70 bg-background">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Runtime and FSR</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="rounded border border-border/60 bg-muted/30 px-2.5 py-2 text-xs space-y-1">
+                  <p className="font-medium">Runtime FSR: {runtimeFsr?.label ?? 'Loading…'}</p>
+                  <p className="text-muted-foreground">
+                    Confidence: {runtimeFsr?.confidence ?? '—'} · AppID: {runtimeFsr?.detectedAppId ?? '—'} · PID: {runtimeFsr?.detectedGamePid ?? '—'}
+                  </p>
+                  <p className="text-muted-foreground">
+                    Indicator: {runtimeFsr?.indicatorRequested ? 'requested' : 'not requested'} · Runtime DLL: {runtimeFsr?.dllLoaded ? 'loaded' : 'not loaded'} · Source kind: {runtimeFsr?.dllPathKind ?? '—'}
+                  </p>
+                  <p className="text-muted-foreground break-all">
+                    Source: {runtimeFsr?.sourcePath ?? '—'}
+                  </p>
                 </div>
-              </div>
-            ))}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setRawText(serializeMangoHudEntries(entries))}
-            >
-              Sync to raw editor
-            </Button>
+                <div className="flex gap-2 flex-wrap items-center">
+                  <Button size="sm" variant="outline" onClick={() => void refreshRuntime()}>
+                    Runtime refresh
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      void api.syncRunningFsrToMangoHud(undefined, runtimeTextStyle).then((r) =>
+                        r.ok ? toast.success(r.message) : toast.error(r.error)
+                      )
+                    }
+                  >
+                    Sync runtime text to HUD
+                  </Button>
+                  <div className="inline-flex items-center gap-2 rounded border border-border/60 px-2 py-1 text-xs">
+                    <span className="text-muted-foreground">Runtime text style</span>
+                    <Select
+                      value={runtimeTextStyle}
+                      onChange={(e) => {
+                        const next = e.target.value as MangoHudRuntimeTextStyle
+                        setRuntimeTextStyle(next)
+                        try {
+                          window.localStorage.setItem(MANGOHUD_TEXT_STYLE_KEY, next)
+                        } catch {
+                          // ignore storage errors
+                        }
+                      }}
+                    >
+                      <option value="full-stack">full-stack</option>
+                      <option value="fsr-only">fsr-only</option>
+                      <option value="status-only">status-only</option>
+                      <option value="compact">compact</option>
+                    </Select>
+                  </div>
+                  <label className="inline-flex items-center gap-2 rounded border border-border/60 px-2 py-1 text-xs text-muted-foreground">
+                    <Switch checked={autoRefreshRuntime} onCheckedChange={toggleAutoSync} />
+                    Auto refresh + HUD sync
+                  </label>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 2xl:grid-cols-2 gap-3">
+              {groupedCatalog().map(([section, items]) => (
+                <Card key={section} className="border-border/70 bg-background">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{section}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {items.map((item) => {
+                        if (item.pairRole === 'color' && item.pairWith) return null
+                        const value = entryMap.get(item.key) ?? (item.type === 'boolean' ? '0' : '')
+                        const warning = getWarning(item, value)
+                        const showStandardLabel = !(item.type === 'list' && item.pairRole === 'threshold' && item.pairWith)
+                        const isPairedThreshold = item.type === 'list' && item.pairRole === 'threshold' && item.pairWith
+                        return (
+                          <div key={item.key} className={`space-y-1.5 ${isPairedThreshold ? 'md:col-span-2' : ''}`}>
+                            {showStandardLabel && <label className="text-xs font-medium text-muted-foreground">{item.label}</label>}
+                            {item.type === 'boolean' && (
+                              <Select value={value} onChange={(e) => setKey(item, e.target.value)}>
+                                <option value="1">Enabled</option>
+                                <option value="0">Disabled</option>
+                              </Select>
+                            )}
+                            {item.type === 'select' && (
+                              <Select value={value} onChange={(e) => setKey(item, e.target.value)}>
+                                {(item.options ?? []).map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                                {value && !item.options?.includes(value) && <option value={value}>{value} (custom)</option>}
+                              </Select>
+                            )}
+                            {item.type === 'number' && (
+                              <Input
+                                type="number"
+                                min={item.min}
+                                max={item.max}
+                                step={item.step}
+                                value={value}
+                                onChange={(e) => setKey(item, e.target.value)}
+                              />
+                            )}
+                            {item.type === 'list' && (
+                              <>
+                                {item.pairRole === 'threshold' && item.pairWith
+                                  ? renderPairedThresholdColorField(item, value)
+                                  : item.listKind === 'color-list'
+                                    ? renderColorListField(item, value)
+                                    : item.listKind === 'number-list'
+                                      ? renderNumberListField(item, value)
+                                      : (
+                                        <Input
+                                          value={value}
+                                          onChange={(e) =>
+                                            setKey(
+                                              item,
+                                              e.target.value
+                                                .split(',')
+                                                .map((x) => x.trim())
+                                                .filter(Boolean)
+                                                .join(',')
+                                            )
+                                          }
+                                          placeholder="comma,separated,values"
+                                        />
+                                      )}
+                              </>
+                            )}
+                            {item.type === 'color' && (
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  type="color"
+                                  className="h-9 w-12 p-1"
+                                  value={toColorHex(value)}
+                                  onChange={(e) => setKey(item, e.target.value)}
+                                />
+                                <Input value={value} onChange={(e) => setKey(item, e.target.value)} placeholder="RRGGBB" />
+                              </div>
+                            )}
+                            {item.type === 'string' && <Input value={value} onChange={(e) => setKey(item, e.target.value)} />}
+                            {item.help && <p className="text-[11px] text-muted-foreground">{item.help}</p>}
+                            {warning && <p className="text-[11px] text-amber-600">{warning}</p>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </CardContent>
         </Card>
 
@@ -790,16 +1233,14 @@ export function MangoHudLive() {
             <Textarea
               className="font-mono text-xs min-h-[380px]"
               value={rawText}
-              onChange={(e) => setRawText(e.target.value)}
+              onChange={(e) => {
+                const nextRaw = e.target.value
+                syncingFromRawRef.current = true
+                setRawText(nextRaw)
+                setEntries(parseMangoHudConfigText(nextRaw).entries)
+              }}
             />
             <div className="flex gap-2 flex-wrap">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setEntries(parseMangoHudConfigText(rawText).entries)}
-              >
-                Parse raw into structured
-              </Button>
               <Button
                 size="sm"
                 onClick={() =>

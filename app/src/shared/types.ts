@@ -322,6 +322,47 @@ export type MangoHudListBackupsResult =
   | { ok: true; entries: Array<{ fileName: string; mtimeMs: number }> }
   | { ok: false; error: string }
 
+export interface MangoHudProfile {
+  id: string
+  name: string
+  entries: MangoHudConfigEntry[]
+  createdAt: number
+  updatedAt: number
+}
+
+export type MangoHudProfileApplyMode = 'manual' | 'auto-detect'
+
+export type MangoHudProfilesListResult =
+  | {
+      ok: true
+      profiles: MangoHudProfile[]
+      assignments: Record<string, string>
+      applyMode: MangoHudProfileApplyMode
+      defaultProfileId: string | null
+    }
+  | { ok: false; error: string }
+
+export type MangoHudProfileSaveResult =
+  | {
+      ok: true
+      profile: MangoHudProfile
+    }
+  | { ok: false; error: string }
+
+export type MangoHudProfileDeleteResult = { ok: true } | { ok: false; error: string }
+
+export type MangoHudProfileAssignResult = { ok: true } | { ok: false; error: string }
+
+export type MangoHudProfileResolveResult =
+  | {
+      ok: true
+      profile: MangoHudProfile | null
+      source: 'manual' | 'specific' | 'default' | 'none'
+    }
+  | { ok: false; error: string }
+
+export type MangoHudProfileSettingsSaveResult = { ok: true } | { ok: false; error: string }
+
 export interface MongoConnectionProfile {
   id: string
   name: string

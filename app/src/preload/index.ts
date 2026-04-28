@@ -35,6 +35,13 @@ import type {
   MangoHudReadResult,
   MangoHudReloadResult,
   MangoHudSaveResult,
+  MangoHudProfilesListResult,
+  MangoHudProfileSaveResult,
+  MangoHudProfileDeleteResult,
+  MangoHudProfileAssignResult,
+  MangoHudProfileResolveResult,
+  MangoHudProfileApplyMode,
+  MangoHudProfileSettingsSaveResult,
   MangoHudStatus,
   MangoHudRuntimeTextStyle,
   RunningFsrStatus,
@@ -160,6 +167,25 @@ const realApi = {
     ipcRenderer.invoke(IPC.MANGOHUD_BACKUPS_READ, fileName),
   restoreMangoHudBackup: (fileName: string): Promise<MangoHudSaveResult> =>
     ipcRenderer.invoke(IPC.MANGOHUD_BACKUPS_RESTORE, fileName),
+  listMangoHudProfiles: (): Promise<MangoHudProfilesListResult> =>
+    ipcRenderer.invoke(IPC.MANGOHUD_PROFILES_LIST),
+  saveMangoHudProfile: (payload: {
+    id?: string
+    name: string
+    entries: MangoHudConfigEntry[]
+  }): Promise<MangoHudProfileSaveResult> =>
+    ipcRenderer.invoke(IPC.MANGOHUD_PROFILES_SAVE, payload),
+  deleteMangoHudProfile: (profileId: string): Promise<MangoHudProfileDeleteResult> =>
+    ipcRenderer.invoke(IPC.MANGOHUD_PROFILES_DELETE, profileId),
+  assignMangoHudProfile: (payload: { appId: number; profileId: string | null }): Promise<MangoHudProfileAssignResult> =>
+    ipcRenderer.invoke(IPC.MANGOHUD_PROFILES_ASSIGN, payload),
+  getMangoHudProfileForApp: (appId: number): Promise<MangoHudProfileResolveResult> =>
+    ipcRenderer.invoke(IPC.MANGOHUD_PROFILES_RESOLVE_FOR_APP, appId),
+  saveMangoHudProfileSettings: (payload: {
+    applyMode: MangoHudProfileApplyMode
+    defaultProfileId: string | null
+  }): Promise<MangoHudProfileSettingsSaveResult> =>
+    ipcRenderer.invoke(IPC.MANGOHUD_PROFILES_SAVE_SETTINGS, payload),
 
   listMongoHudConnections: (): Promise<MongoConnectionProfile[]> =>
     ipcRenderer.invoke(IPC.MONGO_HUD_CONNECTIONS_LIST),

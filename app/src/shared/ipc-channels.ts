@@ -85,6 +85,12 @@ export const IPC = {
   MANGOHUD_BACKUPS_LIST: 'mangohud:backups-list',
   MANGOHUD_BACKUPS_READ: 'mangohud:backups-read',
   MANGOHUD_BACKUPS_RESTORE: 'mangohud:backups-restore',
+  MANGOHUD_PROFILES_LIST: 'mangohud:profiles-list',
+  MANGOHUD_PROFILES_SAVE: 'mangohud:profiles-save',
+  MANGOHUD_PROFILES_DELETE: 'mangohud:profiles-delete',
+  MANGOHUD_PROFILES_ASSIGN: 'mangohud:profiles-assign',
+  MANGOHUD_PROFILES_RESOLVE_FOR_APP: 'mangohud:profiles-resolve-for-app',
+  MANGOHUD_PROFILES_SAVE_SETTINGS: 'mangohud:profiles-save-settings',
 
   // Mongo HUD editor
   MONGO_HUD_CONNECTIONS_LIST: 'mongo-hud:connections-list',
