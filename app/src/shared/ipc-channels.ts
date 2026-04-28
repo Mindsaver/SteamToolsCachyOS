@@ -60,6 +60,7 @@ export const IPC = {
   UPDATE_NOT_AVAILABLE: 'update:not-available',
   UPDATE_ERROR: 'update:error',
   UPDATE_DOWNLOADED: 'update:downloaded',
+  UPDATE_INSTALL_STARTED: 'update:install-started',
 
   // File dialogs
   DIALOG_OPEN_FILE: 'dialog:open-file',

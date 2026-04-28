@@ -119,6 +119,7 @@ function makeVoidListeners() {
 }
 const updateNotAvailCh = makeVoidListeners()
 const updateErrCh = makeChannel<(i: { message: string }) => void>()
+const updateInstallStartedCh = makeVoidListeners()
 const compatProgCh = makeChannel<(p: CompatInstallProgress) => void>()
 const compatAvailCh = makeChannel<(p: CompatToolsUpdateAvailablePayload) => void>()
 const simMongoConnections = new Map<string, MongoConnectionProfile>()
@@ -582,12 +583,16 @@ export const mockApi = {
     await delay(200)
     updateDoneCh.emit({ version: '1.2.0' })
   },
-  installUpdate: async () => { /* no-op in sim */ },
+  installUpdate: async () => {
+    await delay(60)
+    updateInstallStartedCh.emit()
+  },
   onUpdateAvailable: updateAvailCh.on,
   onUpdateDownloaded: updateDoneCh.on,
   onUpdateProgress: updateProgCh.on,
   onUpdateNotAvailable: updateNotAvailCh.on,
   onUpdateError: updateErrCh.on,
+  onUpdateInstallStarted: updateInstallStartedCh.on,
 
   // ── Dialogs & shell ────────────────────────────────────────────────────────
   openFileDialog: async (_filters?: unknown) => {

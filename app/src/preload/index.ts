@@ -218,6 +218,11 @@ const realApi = {
     ipcRenderer.on(IPC.UPDATE_ERROR, handler)
     return () => ipcRenderer.removeListener(IPC.UPDATE_ERROR, handler)
   },
+  onUpdateInstallStarted: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on(IPC.UPDATE_INSTALL_STARTED, handler)
+    return () => ipcRenderer.removeListener(IPC.UPDATE_INSTALL_STARTED, handler)
+  },
 
   openFileDialog: (filters?: Electron.FileFilter[]) =>
     ipcRenderer.invoke(IPC.DIALOG_OPEN_FILE, { filters }),

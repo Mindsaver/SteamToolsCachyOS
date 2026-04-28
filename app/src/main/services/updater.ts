@@ -68,13 +68,19 @@ export const autoUpdater: AppUpdater = resolveAutoUpdater()
 
 autoUpdater.logger = log
 autoUpdater.autoDownload = false
-autoUpdater.autoInstallOnAppQuit = true
+// Keep install explicit via the UI action; avoids surprise auth prompts on plain app close.
+autoUpdater.autoInstallOnAppQuit = false
 
 let mainWindow: BrowserWindow | null = null
 
 function send(channel: string, data?: unknown): void {
+  if (!channel) return
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(channel, data)
+    try {
+      mainWindow.webContents.send(channel, data)
+    } catch (err) {
+      log.error('[updater] failed to send IPC event:', channel, err)
+    }
   }
 }
 
@@ -121,11 +127,17 @@ export function downloadUpdate(): void {
 }
 
 /** Delay before quit so the renderer can paint “installing” UI after IPC returns. */
-const INSTALL_QUIT_DELAY_MS = 220
+const INSTALL_QUIT_DELAY_MS = 500
 
 export function installUpdate(): void {
   send(IPC.UPDATE_INSTALL_STARTED)
   setTimeout(() => {
-    autoUpdater.quitAndInstall(false, true)
+    try {
+      autoUpdater.quitAndInstall(false, true)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error('[updater] quitAndInstall failed:', err)
+      send(IPC.UPDATE_ERROR, { message: `Install start failed: ${message}` })
+    }
   }, INSTALL_QUIT_DELAY_MS)
 }

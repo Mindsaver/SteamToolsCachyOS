@@ -48,6 +48,7 @@ const fsrListeners = new Set<ProgressCb>()
 const updateAvailListeners = new Set<(i: { version: string }) => void>()
 const updateDoneListeners = new Set<(i: { version: string }) => void>()
 const updateProgressListeners = new Set<(i: { percent: number }) => void>()
+const updateInstallStartedListeners = new Set<() => void>()
 
 export const mockApi: Api = {
   // ── Steam ──────────────────────────────────────────────────────────────────
@@ -147,7 +148,10 @@ export const mockApi: Api = {
     await delay(200)
     for (const cb of updateDoneListeners) cb({ version: '1.2.0' })
   },
-  installUpdate: async () => { /* no-op in sim */ },
+  installUpdate: async () => {
+    await delay(60)
+    for (const cb of updateInstallStartedListeners) cb()
+  },
   onUpdateAvailable: (cb) => {
     updateAvailListeners.add(cb)
     return () => updateAvailListeners.delete(cb)
@@ -159,6 +163,10 @@ export const mockApi: Api = {
   onUpdateProgress: (cb) => {
     updateProgressListeners.add(cb)
     return () => updateProgressListeners.delete(cb)
+  },
+  onUpdateInstallStarted: (cb) => {
+    updateInstallStartedListeners.add(cb)
+    return () => updateInstallStartedListeners.delete(cb)
   },
 
   // ── Dialogs & shell ────────────────────────────────────────────────────────

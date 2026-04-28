@@ -10,6 +10,7 @@ interface UpdateState {
   version: string | null
   downloaded: boolean
   downloading: boolean
+  installing: boolean
   progress: number
   dismissed: boolean
 }
@@ -20,6 +21,7 @@ export function UpdateBanner() {
     version: null,
     downloaded: false,
     downloading: false,
+    installing: false,
     progress: 0,
     dismissed: false,
   })
@@ -34,7 +36,7 @@ export function UpdateBanner() {
       }))
     })
     const offDone = api.onUpdateDownloaded((info) => {
-      setState((s) => ({ ...s, downloaded: true, downloading: false, version: info.version }))
+      setState((s) => ({ ...s, downloaded: true, downloading: false, installing: false, version: info.version }))
     })
     const offProgress = api.onUpdateProgress((p) => {
       setState((s) => ({ ...s, progress: p.percent }))
@@ -56,11 +58,19 @@ export function UpdateBanner() {
       }
     })
     const offErr = api.onUpdateError(({ message }) => {
+      setState((s) => ({ ...s, installing: false }))
       toast.error(message || 'Update check failed.')
+    })
+    const offInstallStarted = api.onUpdateInstallStarted(() => {
+      setState((s) => ({ ...s, installing: true }))
+      toast.message('Restarting to install update…', {
+        description: 'An authentication prompt may appear. Keep SteamTools open until prompted.',
+      })
     })
     return () => {
       offNa()
       offErr()
+      offInstallStarted()
     }
   }, [])
 
@@ -71,9 +81,15 @@ export function UpdateBanner() {
       <RefreshCw className="h-4 w-4 text-primary shrink-0" />
       <div className="flex-1 min-w-0">
         {state.downloaded ? (
-          <span>
-            Version <strong>{state.version}</strong> downloaded — restart to apply.
-          </span>
+          state.installing ? (
+            <span>
+              Preparing installer for <strong>{state.version}</strong>…
+            </span>
+          ) : (
+            <span>
+              Version <strong>{state.version}</strong> downloaded — restart to apply.
+            </span>
+          )
         ) : state.downloading ? (
           <div className="space-y-1">
             <span>Downloading update {state.version}…</span>
@@ -87,8 +103,20 @@ export function UpdateBanner() {
       </div>
       <div className="flex gap-2 shrink-0">
         {state.downloaded && (
-          <Button size="sm" onClick={() => api.installUpdate()}>
-            Restart & install
+          <Button
+            size="sm"
+            disabled={state.installing}
+            onClick={async () => {
+              setState((s) => ({ ...s, installing: true }))
+              try {
+                await api.installUpdate()
+              } catch (e) {
+                setState((s) => ({ ...s, installing: false }))
+                toast.error(e instanceof Error ? e.message : 'Failed to start installer.')
+              }
+            }}
+          >
+            {state.installing ? 'Starting install…' : 'Restart & install'}
           </Button>
         )}
         {!state.downloaded && !state.downloading && (
