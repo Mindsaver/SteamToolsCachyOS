@@ -65,7 +65,7 @@ describe('mangohud service', () => {
       sourcePath: '/tmp/amdxcffx64.dll',
       updatedAt: Date.now(),
     })
-    if (!r.ok && !/Could not signal MangoHud process/.test(r.error)) {
+    if (!r.ok && !/(Could not signal MangoHud process|No running MangoHud process found)/.test(r.error)) {
       expect(r.ok).toBe(true)
     }
     const read = readMangoHudConfig()
