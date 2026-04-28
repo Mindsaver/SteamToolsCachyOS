@@ -50,6 +50,7 @@ import type {
   MongoConnectionProfile,
   MongoHudPreviewRequest,
   RunningFsrStatus,
+  MangoHudRuntimeTextStyle,
 } from '../shared/types'
 import { parseUserSettingsEnvFromText } from '../shared/userSettingsPy'
 import { runSymlinkHub } from './services/symlink/hub'
@@ -273,15 +274,16 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
   ipcMain.handle(
     IPC.FSR_RUNTIME_SYNC_TO_MANGOHUD,
-    async (_e, payload?: { appId?: number | null }) => {
+    async (_e, payload?: { appId?: number | null; style?: MangoHudRuntimeTextStyle }) => {
       const settings = loadSettings()
       const installPath = settings.steamPath || resolveSteamInstall()
       const appId = payload?.appId ?? null
+      const style = payload?.style ?? 'full-stack'
       const status: RunningFsrStatus = getRunningFsrStatus(
         installPath,
         typeof appId === 'number' ? appId : null
       )
-      return syncRuntimeFsrTextToMangoHud(status)
+      return syncRuntimeFsrTextToMangoHud(status, style)
     }
   )
 

@@ -9,18 +9,24 @@ import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import { Switch } from '../components/ui/switch'
 import { parseMangoHudConfigText, mergeMangoHudEntry, serializeMangoHudEntries } from '../../shared/mangohudConfig'
-import type { MangoHudConfigEntry, RunningFsrStatus } from '../../shared/types'
+import type { MangoHudConfigEntry, MangoHudRuntimeTextStyle, RunningFsrStatus } from '../../shared/types'
 
-type FieldType = 'boolean' | 'number' | 'string' | 'list'
+type FieldType = 'boolean' | 'number' | 'string' | 'list' | 'color' | 'select'
 interface CatalogItem {
   key: string
   label: string
   section: string
   type: FieldType
+  options?: string[]
+  min?: number
+  max?: number
+  step?: number
+  help?: string
 }
 
 const MANGOHUD_AUTO_SYNC_KEY = 'mangohudAutoSyncEnabled'
 const MANGOHUD_AUTO_SYNC_EVENT = 'mangohud-auto-sync-changed'
+const MANGOHUD_TEXT_STYLE_KEY = 'mangohudRuntimeTextStyle'
 
 const CATALOG: CatalogItem[] = [
   { section: 'General', key: 'legacy_layout', label: 'Legacy layout', type: 'boolean' },
@@ -30,13 +36,19 @@ const CATALOG: CatalogItem[] = [
   { section: 'General', key: 'hud_compact', label: 'Compact HUD', type: 'boolean' },
   { section: 'General', key: 'hud_no_margin', label: 'No margin', type: 'boolean' },
   { section: 'General', key: 'table_columns', label: 'Table columns', type: 'number' },
-  { section: 'General', key: 'position', label: 'Overlay position', type: 'string' },
+  {
+    section: 'General',
+    key: 'position',
+    label: 'Overlay position',
+    type: 'select',
+    options: ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'top-center', 'bottom-center'],
+  },
   { section: 'General', key: 'offset_x', label: 'Offset X', type: 'number' },
   { section: 'General', key: 'offset_y', label: 'Offset Y', type: 'number' },
   { section: 'General', key: 'round_corners', label: 'Round corners', type: 'number' },
   { section: 'General', key: 'alpha', label: 'Global alpha', type: 'number' },
   { section: 'General', key: 'background_alpha', label: 'Background alpha', type: 'number' },
-  { section: 'General', key: 'background_color', label: 'Background color', type: 'string' },
+  { section: 'General', key: 'background_color', label: 'Background color', type: 'color' },
   { section: 'General', key: 'font_file', label: 'Font file', type: 'string' },
   { section: 'General', key: 'font_size', label: 'Primary font size', type: 'number' },
   { section: 'General', key: 'font_size_text', label: 'Text font size', type: 'number' },
@@ -50,7 +62,7 @@ const CATALOG: CatalogItem[] = [
   { section: 'Overlay', key: 'fps_color_change', label: 'FPS color change', type: 'boolean' },
   { section: 'Overlay', key: 'fps_value', label: 'FPS thresholds', type: 'list' },
   { section: 'Overlay', key: 'fps_color', label: 'FPS colors', type: 'list' },
-  { section: 'Overlay', key: 'frametime_color', label: 'Frame time color', type: 'string' },
+  { section: 'Overlay', key: 'frametime_color', label: 'Frame time color', type: 'color' },
   { section: 'Overlay', key: 'frame_count', label: 'Frame count', type: 'boolean' },
   { section: 'Overlay', key: 'toggle_hud', label: 'Toggle HUD hotkey', type: 'string' },
   { section: 'Overlay', key: 'toggle_hud_position', label: 'Toggle position hotkey', type: 'string' },
@@ -69,7 +81,7 @@ const CATALOG: CatalogItem[] = [
   { section: 'GPU', key: 'gpu_load_value', label: 'GPU load thresholds', type: 'list' },
   { section: 'GPU', key: 'gpu_load_color', label: 'GPU load colors', type: 'list' },
   { section: 'GPU', key: 'gpu_text', label: 'GPU label', type: 'string' },
-  { section: 'GPU', key: 'gpu_color', label: 'GPU label color', type: 'string' },
+  { section: 'GPU', key: 'gpu_color', label: 'GPU label color', type: 'color' },
 
   { section: 'CPU', key: 'cpu_stats', label: 'CPU stats', type: 'boolean' },
   { section: 'CPU', key: 'cpu_temp', label: 'CPU temperature', type: 'boolean' },
@@ -81,31 +93,37 @@ const CATALOG: CatalogItem[] = [
   { section: 'CPU', key: 'cpu_load_value', label: 'CPU load thresholds', type: 'list' },
   { section: 'CPU', key: 'cpu_load_color', label: 'CPU load colors', type: 'list' },
   { section: 'CPU', key: 'cpu_text', label: 'CPU label', type: 'string' },
-  { section: 'CPU', key: 'cpu_color', label: 'CPU label color', type: 'string' },
+  { section: 'CPU', key: 'cpu_color', label: 'CPU label color', type: 'color' },
 
   { section: 'Memory', key: 'ram', label: 'RAM usage', type: 'boolean' },
   { section: 'Memory', key: 'vram', label: 'VRAM usage', type: 'boolean' },
   { section: 'Memory', key: 'swap', label: 'Swap usage', type: 'boolean' },
-  { section: 'Memory', key: 'ram_color', label: 'RAM color', type: 'string' },
-  { section: 'Memory', key: 'vram_color', label: 'VRAM color', type: 'string' },
-  { section: 'Memory', key: 'wine_color', label: 'Wine color', type: 'string' },
+  { section: 'Memory', key: 'ram_color', label: 'RAM color', type: 'color' },
+  { section: 'Memory', key: 'vram_color', label: 'VRAM color', type: 'color' },
+  { section: 'Memory', key: 'wine_color', label: 'Wine color', type: 'color' },
 
   { section: 'Frames', key: 'fps_limit', label: 'FPS limit', type: 'list' },
-  { section: 'Frames', key: 'fps_limit_method', label: 'FPS limit method', type: 'string' },
+  {
+    section: 'Frames',
+    key: 'fps_limit_method',
+    label: 'FPS limit method',
+    type: 'select',
+    options: ['early', 'late', 'fifo', 'mailbox'],
+  },
   { section: 'Frames', key: 'fps_sampling_period', label: 'FPS sampling period', type: 'number' },
   { section: 'Frames', key: 'vsync', label: 'Vsync', type: 'boolean' },
   { section: 'Frames', key: 'gl_vsync', label: 'OpenGL vsync', type: 'number' },
 
   { section: 'Style', key: 'background_alpha', label: 'Background alpha', type: 'number' },
-  { section: 'Style', key: 'text_color', label: 'Text color', type: 'string' },
-  { section: 'Style', key: 'engine_color', label: 'Engine color', type: 'string' },
-  { section: 'Style', key: 'media_player_color', label: 'Media player color', type: 'string' },
-  { section: 'Style', key: 'network_color', label: 'Network color', type: 'string' },
-  { section: 'Style', key: 'battery_color', label: 'Battery color', type: 'string' },
-  { section: 'Style', key: 'horizontal_separator_color', label: 'Separator color', type: 'string' },
-  { section: 'Style', key: 'gpu_color', label: 'GPU color', type: 'string' },
-  { section: 'Style', key: 'cpu_color', label: 'CPU color', type: 'string' },
-  { section: 'Style', key: 'io_color', label: 'IO color', type: 'string' },
+  { section: 'Style', key: 'text_color', label: 'Text color', type: 'color' },
+  { section: 'Style', key: 'engine_color', label: 'Engine color', type: 'color' },
+  { section: 'Style', key: 'media_player_color', label: 'Media player color', type: 'color' },
+  { section: 'Style', key: 'network_color', label: 'Network color', type: 'color' },
+  { section: 'Style', key: 'battery_color', label: 'Battery color', type: 'color' },
+  { section: 'Style', key: 'horizontal_separator_color', label: 'Separator color', type: 'color' },
+  { section: 'Style', key: 'gpu_color', label: 'GPU color', type: 'color' },
+  { section: 'Style', key: 'cpu_color', label: 'CPU color', type: 'color' },
+  { section: 'Style', key: 'io_color', label: 'IO color', type: 'color' },
 
   { section: 'System', key: 'io_stats', label: 'IO stats', type: 'boolean' },
   { section: 'System', key: 'network', label: 'Network stats', type: 'boolean' },
@@ -144,7 +162,17 @@ function groupedCatalog() {
 function normalizeEntryValue(type: FieldType, value: string): string {
   if (type === 'boolean') return value === '0' ? '0' : '1'
   if (type === 'number') return value.replace(/[^\d.-]/g, '')
+  if (type === 'color') {
+    const cleaned = value.trim().replace(/^#/, '').replace(/[^0-9a-fA-F]/g, '').slice(0, 6)
+    return cleaned
+  }
   return value
+}
+
+function toColorHex(value: string): string {
+  const cleaned = normalizeEntryValue('color', value)
+  if (cleaned.length === 3 || cleaned.length === 6) return `#${cleaned}`
+  return '#ffffff'
 }
 
 export function MangoHudLive() {
@@ -161,6 +189,14 @@ export function MangoHudLive() {
       return window.localStorage.getItem(MANGOHUD_AUTO_SYNC_KEY) === '1'
     } catch {
       return false
+    }
+  })
+  const [runtimeTextStyle, setRuntimeTextStyle] = useState<MangoHudRuntimeTextStyle>(() => {
+    try {
+      const saved = window.localStorage.getItem(MANGOHUD_TEXT_STYLE_KEY) as MangoHudRuntimeTextStyle | null
+      return saved ?? 'full-stack'
+    } catch {
+      return 'full-stack'
     }
   })
 
@@ -242,6 +278,21 @@ export function MangoHudLive() {
     setEntries((prev) => mergeMangoHudEntry(prev, item.key, value))
   }
 
+  const getWarning = (item: CatalogItem, value: string): string | null => {
+    if (!value) return null
+    if (item.type === 'number') {
+      const n = Number(value)
+      if (!Number.isFinite(n)) return 'Invalid number'
+      if (typeof item.min === 'number' && n < item.min) return `Must be >= ${item.min}`
+      if (typeof item.max === 'number' && n > item.max) return `Must be <= ${item.max}`
+    }
+    if (item.type === 'color') {
+      const v = normalizeEntryValue('color', value)
+      if (!(v.length === 3 || v.length === 6)) return 'Use 3 or 6 digit hex color'
+    }
+    return null
+  }
+
   const entryMap = useMemo(() => new Map(entries.map((e) => [e.key, e.value])), [entries])
 
   return (
@@ -312,13 +363,33 @@ export function MangoHudLive() {
               size="sm"
               variant="outline"
               onClick={() =>
-                void api.syncRunningFsrToMangoHud().then((r) =>
+                void api.syncRunningFsrToMangoHud(undefined, runtimeTextStyle).then((r) =>
                   r.ok ? toast.success(r.message) : toast.error(r.error)
                 )
               }
             >
               Sync runtime text to HUD
             </Button>
+            <div className="inline-flex items-center gap-2 rounded border border-border/60 px-2 py-1 text-xs">
+              <span className="text-muted-foreground">Runtime text style</span>
+              <Select
+                value={runtimeTextStyle}
+                onChange={(e) => {
+                  const next = e.target.value as MangoHudRuntimeTextStyle
+                  setRuntimeTextStyle(next)
+                  try {
+                    window.localStorage.setItem(MANGOHUD_TEXT_STYLE_KEY, next)
+                  } catch {
+                    // ignore storage errors
+                  }
+                }}
+              >
+                <option value="full-stack">full-stack</option>
+                <option value="fsr-only">fsr-only</option>
+                <option value="status-only">status-only</option>
+                <option value="compact">compact</option>
+              </Select>
+            </div>
             <label className="inline-flex items-center gap-2 rounded border border-border/60 px-2 py-1 text-xs text-muted-foreground">
               <Switch checked={autoRefreshRuntime} onCheckedChange={toggleAutoSync} />
               Auto refresh + HUD sync
@@ -345,17 +416,66 @@ export function MangoHudLive() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {items.map((item) => {
                     const value = entryMap.get(item.key) ?? (item.type === 'boolean' ? '0' : '')
+                    const warning = getWarning(item, value)
                     return (
                       <div key={item.key} className="space-y-1">
                         <label className="text-xs text-muted-foreground">{item.label}</label>
-                        {item.type === 'boolean' ? (
+                        {item.type === 'boolean' && (
                           <Select value={value} onChange={(e) => setKey(item, e.target.value)}>
                             <option value="1">Enabled</option>
                             <option value="0">Disabled</option>
                           </Select>
-                        ) : (
-                          <Input value={value} onChange={(e) => setKey(item, e.target.value)} />
                         )}
+                        {item.type === 'select' && (
+                          <Select value={value} onChange={(e) => setKey(item, e.target.value)}>
+                            {(item.options ?? []).map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                            {value && !item.options?.includes(value) && <option value={value}>{value} (custom)</option>}
+                          </Select>
+                        )}
+                        {item.type === 'number' && (
+                          <Input
+                            type="number"
+                            min={item.min}
+                            max={item.max}
+                            step={item.step}
+                            value={value}
+                            onChange={(e) => setKey(item, e.target.value)}
+                          />
+                        )}
+                        {item.type === 'list' && (
+                          <Input
+                            value={value}
+                            onChange={(e) =>
+                              setKey(
+                                item,
+                                e.target.value
+                                  .split(',')
+                                  .map((x) => x.trim())
+                                  .filter(Boolean)
+                                  .join(',')
+                              )
+                            }
+                            placeholder="comma,separated,values"
+                          />
+                        )}
+                        {item.type === 'color' && (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="color"
+                              className="h-9 w-12 p-1"
+                              value={toColorHex(value)}
+                              onChange={(e) => setKey(item, e.target.value)}
+                            />
+                            <Input value={value} onChange={(e) => setKey(item, e.target.value)} placeholder="RRGGBB" />
+                          </div>
+                        )}
+                        {item.type === 'string' && <Input value={value} onChange={(e) => setKey(item, e.target.value)} />}
+                        {item.help && <p className="text-[11px] text-muted-foreground">{item.help}</p>}
+                        {warning && <p className="text-[11px] text-amber-600">{warning}</p>}
                       </div>
                     )
                   })}

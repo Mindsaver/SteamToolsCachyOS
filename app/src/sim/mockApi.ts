@@ -37,6 +37,7 @@ import type {
   MangoHudReloadResult,
   MangoHudSaveResult,
   MangoHudStatus,
+  MangoHudRuntimeTextStyle,
   RunningFsrStatus,
 } from '../shared/types'
 import { parseMangoHudConfigText, serializeMangoHudEntries } from '../shared/mangohudConfig'
@@ -207,7 +208,10 @@ export const mockApi = {
       updatedAt: Date.now(),
     }
   },
-  syncRunningFsrToMangoHud: async (_appId?: number | null): Promise<MangoHudReloadResult> => {
+  syncRunningFsrToMangoHud: async (
+    _appId?: number | null,
+    _style?: MangoHudRuntimeTextStyle
+  ): Promise<MangoHudReloadResult> => {
     await delay(40)
     return { ok: true, message: 'Simulated MangoHud runtime FSR text sync' }
   },

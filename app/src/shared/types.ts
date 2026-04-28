@@ -316,6 +316,8 @@ export type MangoHudReloadResult =
   | { ok: true; message: string }
   | { ok: false; error: string }
 
+export type MangoHudRuntimeTextStyle = 'full-stack' | 'fsr-only' | 'status-only' | 'compact'
+
 export type MangoHudListBackupsResult =
   | { ok: true; entries: Array<{ fileName: string; mtimeMs: number }> }
   | { ok: false; error: string }

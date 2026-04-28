@@ -41,6 +41,7 @@ const NAV_ITEMS = [
 
 const MANGOHUD_AUTO_SYNC_KEY = 'mangohudAutoSyncEnabled'
 const MANGOHUD_AUTO_SYNC_EVENT = 'mangohud-auto-sync-changed'
+const MANGOHUD_TEXT_STYLE_KEY = 'mangohudRuntimeTextStyle'
 
 export default function App() {
   const navigate = useNavigate()
@@ -116,7 +117,12 @@ export default function App() {
         ].join('|')
         if (sig !== lastRuntimeSigRef.current) {
           lastRuntimeSigRef.current = sig
-          await api.syncRunningFsrToMangoHud(status.detectedAppId)
+          const style = (window.localStorage.getItem(MANGOHUD_TEXT_STYLE_KEY) ?? 'full-stack') as
+            | 'full-stack'
+            | 'fsr-only'
+            | 'status-only'
+            | 'compact'
+          await api.syncRunningFsrToMangoHud(status.detectedAppId, style)
         }
       } catch {
         // Keep background loop best-effort; do not spam toasts.

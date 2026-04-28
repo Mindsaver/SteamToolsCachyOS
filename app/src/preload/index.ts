@@ -36,6 +36,7 @@ import type {
   MangoHudReloadResult,
   MangoHudSaveResult,
   MangoHudStatus,
+  MangoHudRuntimeTextStyle,
   RunningFsrStatus,
 } from '../shared/types'
 
@@ -79,8 +80,11 @@ const realApi = {
   copyDll: (dllPath: string) => ipcRenderer.invoke(IPC.FSR_COPY_DLL, { dllPath }),
   getRunningFsrStatus: (appId?: number | null): Promise<RunningFsrStatus> =>
     ipcRenderer.invoke(IPC.FSR_RUNTIME_STATUS, { appId: appId ?? null }),
-  syncRunningFsrToMangoHud: (appId?: number | null): Promise<MangoHudReloadResult> =>
-    ipcRenderer.invoke(IPC.FSR_RUNTIME_SYNC_TO_MANGOHUD, { appId: appId ?? null }),
+  syncRunningFsrToMangoHud: (
+    appId?: number | null,
+    style?: MangoHudRuntimeTextStyle
+  ): Promise<MangoHudReloadResult> =>
+    ipcRenderer.invoke(IPC.FSR_RUNTIME_SYNC_TO_MANGOHUD, { appId: appId ?? null, style: style ?? 'full-stack' }),
   onFsrProgress: (cb: (p: SymlinkProgress) => void) => {
     const handler = (_: unknown, p: SymlinkProgress) => cb(p)
     ipcRenderer.on(IPC.FSR_PROGRESS, handler)

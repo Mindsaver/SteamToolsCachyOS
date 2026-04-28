@@ -15,6 +15,7 @@ import type {
   MangoHudReloadResult,
   MangoHudSaveResult,
   MangoHudStatus,
+  MangoHudRuntimeTextStyle,
   RunningFsrStatus,
 } from '../../../shared/types'
 
@@ -206,17 +207,35 @@ export function parseMangoHudRawText(rawText: string): MangoHudConfigDoc {
   return parseMangoHudConfigText(rawText)
 }
 
-export async function syncRuntimeFsrTextToMangoHud(status: RunningFsrStatus): Promise<MangoHudReloadResult> {
-  const current = readMangoHudConfig()
-  if (!current.ok) return { ok: false, error: current.error }
-  const doc = parseMangoHudConfigText(current.rawText)
-  const managedKey = 'custom_text'
+function formatRuntimeHudText(status: RunningFsrStatus, style: MangoHudRuntimeTextStyle): string {
+  if (style === 'compact') {
+    return status.fsrVersion ? `ST:${status.fsrVersion}` : `ST:${status.label}`
+  }
+  if (style === 'status-only') {
+    return `SteamTools: ${status.label}`
+  }
+  if (style === 'fsr-only') {
+    return status.fsrVersion
+      ? `SteamTools: ${status.label} | FSR ${status.fsrVersion}`
+      : `SteamTools: ${status.label}`
+  }
   const parts = [
     status.fsrVersion ? `FSR ${status.fsrVersion}` : null,
     status.mlfiVersion ? `MLFI ${status.mlfiVersion}` : null,
     status.framegenVersion ? `FG ${status.framegenVersion}` : null,
   ].filter((p): p is string => Boolean(p))
-  const managedValue = parts.length > 0 ? `SteamTools: ${status.label} | ${parts.join(' | ')}` : `SteamTools: ${status.label}`
+  return parts.length > 0 ? `SteamTools: ${status.label} | ${parts.join(' | ')}` : `SteamTools: ${status.label}`
+}
+
+export async function syncRuntimeFsrTextToMangoHud(
+  status: RunningFsrStatus,
+  style: MangoHudRuntimeTextStyle = 'full-stack'
+): Promise<MangoHudReloadResult> {
+  const current = readMangoHudConfig()
+  if (!current.ok) return { ok: false, error: current.error }
+  const doc = parseMangoHudConfigText(current.rawText)
+  const managedKey = 'custom_text'
+  const managedValue = formatRuntimeHudText(status, style)
   const next = [...doc.entries]
   const idx = next.findIndex((e) => e.key === managedKey)
   if (idx >= 0 && next[idx].value === managedValue) {

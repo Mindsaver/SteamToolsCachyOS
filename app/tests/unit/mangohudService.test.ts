@@ -50,7 +50,16 @@ describe('mangohud service', () => {
     expect(saveMangoHudConfig({ rawText: 'fps=1' }).ok).toBe(true)
     const r = await syncRuntimeFsrTextToMangoHud({
       indicatorState: 'fsr4-active',
+      indicatorRequested: true,
+      dllLoaded: true,
+      likelyActive: true,
+      detectedAppId: 730,
+      detectedGamePid: 1234,
+      dllPathKind: 'mapped',
+      mappedDlls: { fsr: ['/tmp/amdxcffx64.dll'], dlss: [], xess: [] },
       fsrVersion: '4.0.1',
+      mlfiVersion: '4.0.0',
+      framegenVersion: '4.0.1',
       confidence: 'inferred',
       label: 'FSR4 active (4.0.1 inferred)',
       sourcePath: '/tmp/amdxcffx64.dll',
@@ -61,6 +70,37 @@ describe('mangohud service', () => {
     }
     const read = readMangoHudConfig()
     expect(read.ok).toBe(true)
-    if (read.ok) expect(read.rawText).toContain('custom_text=SteamTools: FSR4 active (4.0.1 inferred)')
+    if (read.ok) expect(read.rawText).toContain('custom_text=SteamTools: FSR4 active (4.0.1 inferred) | FSR 4.0.1')
+  })
+
+  it('supports compact runtime text style', async () => {
+    process.env['MANGOHUD_CONFIG_PATH'] = cfgPath
+    expect(saveMangoHudConfig({ rawText: 'fps=1' }).ok).toBe(true)
+    const r = await syncRuntimeFsrTextToMangoHud(
+      {
+        indicatorState: 'fsr4-active',
+        indicatorRequested: true,
+        dllLoaded: true,
+        likelyActive: true,
+        detectedAppId: 730,
+        detectedGamePid: 1234,
+        dllPathKind: 'mapped',
+        mappedDlls: { fsr: ['/tmp/amdxcffx64.dll'], dlss: [], xess: [] },
+        fsrVersion: '4.1.0',
+        mlfiVersion: '4.0.0',
+        framegenVersion: '4.1.0',
+        confidence: 'inferred',
+        label: 'FSR4 active (4.1.0 inferred)',
+        sourcePath: '/tmp/amdxcffx64.dll',
+        updatedAt: Date.now(),
+      },
+      'compact'
+    )
+    if (!r.ok && !/No running MangoHud process/.test(r.error)) {
+      expect(r.ok).toBe(true)
+    }
+    const read = readMangoHudConfig()
+    expect(read.ok).toBe(true)
+    if (read.ok) expect(read.rawText).toContain('custom_text=ST:4.1.0')
   })
 })
