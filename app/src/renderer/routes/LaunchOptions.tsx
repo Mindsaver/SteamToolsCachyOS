@@ -118,6 +118,8 @@ export function LaunchOptions() {
   /** Steam Play default from config.vdf CompatToolMapping "0" */
   const [steamPlayDefault, setSteamPlayDefault] = useState<{ toolName: string | null; toolDescription: string | null } | null>(null)
   const [compatByApp, setCompatByApp] = useState<Map<number, CompatToolInfo>>(new Map())
+  /** Internal names found under compatibilitytools.d (user-editable installs). */
+  const [installedCompatToolNames, setInstalledCompatToolNames] = useState<Set<string>>(new Set())
 
   // ── Saving ──────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false)
@@ -129,14 +131,18 @@ export function LaunchOptions() {
   // ── Load ────────────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true)
-    const [gameList, accs] = await Promise.all([
+    const [gameList, accs, compatTools] = await Promise.all([
       api.listGames(),
       api.listAccounts(),
+      api.listCompatToolsInstalled().catch(() => []),
     ])
     const gamesArr = gameList ?? []
     setGames(gamesArr)
     setAccounts(accs ?? [])
     if (accs?.length && !accountId) setAccountId(accs[0].accountId)
+    setInstalledCompatToolNames(
+      new Set((compatTools ?? []).map((r) => (r.internalName ?? '').trim().toLowerCase()).filter(Boolean))
+    )
 
     try {
       const snap = await api.getCompatSnapshot(gamesArr.map((g) => g.appId))
@@ -419,6 +425,7 @@ export function LaunchOptions() {
             <SingleGameEditor
               game={singleGame}
               compatInfo={compatByApp.get(singleGame.appId) ?? null}
+              installedCompatToolNames={installedCompatToolNames}
               editValue={editValue}
               baseline={baseline}
               model={model}
@@ -488,6 +495,7 @@ export function LaunchOptions() {
 interface SingleGameEditorProps {
   game: InstalledGame
   compatInfo: CompatToolInfo | null
+  installedCompatToolNames: Set<string>
   editValue: string
   baseline: string
   model: LaunchOptionsModel
@@ -504,13 +512,18 @@ interface SingleGameEditorProps {
 }
 
 function SingleGameEditor({
-  game, compatInfo, editValue, baseline, model, isDirty, steamRunning, saving, gpuInfo, globalEnv,
+  game, compatInfo, installedCompatToolNames, editValue, baseline, model, isDirty, steamRunning, saving, gpuInfo, globalEnv,
   onRawChange, onModelChange, onSave, onRevert, onCopyTo,
 }: SingleGameEditorProps) {
   const navigate = useNavigate()
-  const protonToolForUserSettings =
+  const resolvedCompatToolForSettings =
     compatInfo && compatInfo.selectionKind !== 'native'
       ? (compatInfo.toolName ?? compatInfo.steamDefaultToolName ?? null)
+      : null
+  const protonToolForUserSettings =
+    resolvedCompatToolForSettings &&
+    installedCompatToolNames.has(resolvedCompatToolForSettings.trim().toLowerCase())
+      ? resolvedCompatToolForSettings
       : null
   const charCount = editValue.length
   const charWarning = charCount > 256
