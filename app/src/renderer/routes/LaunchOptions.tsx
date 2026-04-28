@@ -34,6 +34,8 @@ import type {
   SteamAccount,
   BatchOp,
   BatchTransformPreviewRow,
+  MangoHudStatus,
+  RunningFsrStatus,
 } from '../../shared/types'
 
 // ── Token chip rendering helpers ─────────────────────────────────────────────
@@ -120,6 +122,8 @@ export function LaunchOptions() {
   const [compatByApp, setCompatByApp] = useState<Map<number, CompatToolInfo>>(new Map())
   /** Internal names found under compatibilitytools.d (user-editable installs). */
   const [installedCompatToolNames, setInstalledCompatToolNames] = useState<Set<string>>(new Set())
+  const [mangoHudStatus, setMangoHudStatus] = useState<MangoHudStatus | null>(null)
+  const [runningFsrStatus, setRunningFsrStatus] = useState<RunningFsrStatus | null>(null)
 
   // ── Saving ──────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false)
@@ -136,6 +140,8 @@ export function LaunchOptions() {
       api.listAccounts(),
       api.listCompatToolsInstalled().catch(() => []),
     ])
+    void api.getMangoHudStatus().then(setMangoHudStatus).catch(() => setMangoHudStatus(null))
+    void api.getRunningFsrStatus().then(setRunningFsrStatus).catch(() => setRunningFsrStatus(null))
     const gamesArr = gameList ?? []
     setGames(gamesArr)
     setAccounts(accs ?? [])
@@ -187,6 +193,7 @@ export function LaunchOptions() {
       syncing.current = true
       setModel(parseLaunchOptions(v))
       syncing.current = false
+      void api.getRunningFsrStatus(singleGame.appId).then(setRunningFsrStatus).catch(() => setRunningFsrStatus(null))
     }
   }, [accountId])
 
@@ -210,6 +217,7 @@ export function LaunchOptions() {
         syncing.current = false
         // Load global env overrides for this game's Proton tool
         api.getGlobalEnvOverrides(game.appId).then((env) => setGlobalEnv(env ?? {}))
+        void api.getRunningFsrStatus(game.appId).then(setRunningFsrStatus).catch(() => setRunningFsrStatus(null))
       }
     } else {
       // Multi or zero: reset editor to empty, clear global env
@@ -219,6 +227,7 @@ export function LaunchOptions() {
       setModel(parseLaunchOptions(''))
       syncing.current = false
       setGlobalEnv({})
+      void api.getRunningFsrStatus(null).then(setRunningFsrStatus).catch(() => setRunningFsrStatus(null))
     }
     // Reset batch state
     setBatchPreviewed(false)
@@ -392,6 +401,19 @@ export function LaunchOptions() {
               Steam is running — saves are blocked
             </div>
           )}
+          <span className="text-xs text-muted-foreground">
+            MangoHud config: {mangoHudStatus?.configExists ? 'active' : 'not found'}
+          </span>
+          <span
+            className="text-xs text-muted-foreground"
+            title={
+              runningFsrStatus
+                ? `${runningFsrStatus.sourcePath ?? ''}\nAppID: ${runningFsrStatus.detectedAppId ?? '—'} | PID: ${runningFsrStatus.detectedGamePid ?? '—'} | Source kind: ${runningFsrStatus.dllPathKind}\nIndicator: ${runningFsrStatus.indicatorRequested ? 'requested' : 'not requested'} | DLL: ${runningFsrStatus.dllLoaded ? 'loaded' : 'not loaded'} | Likely active: ${runningFsrStatus.likelyActive ? 'yes' : 'no'}\nMapped families => FSR: ${runningFsrStatus.mappedDlls.fsr.length} | DLSS: ${runningFsrStatus.mappedDlls.dlss.length} | XeSS: ${runningFsrStatus.mappedDlls.xess.length}\nFSR: ${runningFsrStatus.fsrVersion ?? '—'} | ML FI: ${runningFsrStatus.mlfiVersion ?? '—'} | Frame Gen: ${runningFsrStatus.framegenVersion ?? '—'}`
+                : ''
+            }
+          >
+            Runtime FSR: {runningFsrStatus?.label ?? 'unknown'}
+          </span>
         </div>
       </div>
 

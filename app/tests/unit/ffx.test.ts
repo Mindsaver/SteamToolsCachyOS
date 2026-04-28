@@ -45,4 +45,14 @@ describe('analyzeDll', () => {
       fs.unlinkSync(p)
     }
   })
+
+  it('prefers role-scoped version over unrelated higher version', () => {
+    const p = makeFakeDll('randomlib 99.9.9 FFXfsr marker superresolution_pass 2.2.1')
+    try {
+      const result = analyzeDll(p)
+      expect(result.fsr).toBe('2.2.1')
+    } finally {
+      fs.unlinkSync(p)
+    }
+  })
 })

@@ -29,6 +29,8 @@ export const IPC = {
   FSR_ANALYZE_DLL: 'fsr:analyze-dll',
   FSR_COPY_DLL: 'fsr:copy-dll',
   FSR_PROGRESS: 'fsr:progress',
+  FSR_RUNTIME_STATUS: 'fsr:runtime-status',
+  FSR_RUNTIME_SYNC_TO_MANGOHUD: 'fsr:runtime-sync-to-mangohud',
 
   // GPU
   GPU_DETECT: 'gpu:detect',
@@ -73,6 +75,31 @@ export const IPC = {
   COMPAT_TOOLS_PROGRESS: 'compat-tools:progress',
   COMPAT_TOOLS_UPDATE_AVAILABLE: 'compat-tools:update-available',
   COMPAT_TOOLS_OPEN_USER_SETTINGS: 'compat-tools:open-user-settings',
+
+  // MangoHud system config
+  MANGOHUD_STATUS: 'mangohud:status',
+  MANGOHUD_CONFIG_GET: 'mangohud:config-get',
+  MANGOHUD_CONFIG_SAVE: 'mangohud:config-save',
+  MANGOHUD_RELOAD: 'mangohud:reload',
+  MANGOHUD_BACKUPS_LIST: 'mangohud:backups-list',
+  MANGOHUD_BACKUPS_READ: 'mangohud:backups-read',
+  MANGOHUD_BACKUPS_RESTORE: 'mangohud:backups-restore',
+
+  // Mongo HUD editor
+  MONGO_HUD_CONNECTIONS_LIST: 'mongo-hud:connections-list',
+  MONGO_HUD_CONNECTIONS_SAVE: 'mongo-hud:connections-save',
+  MONGO_HUD_CONNECTIONS_DELETE: 'mongo-hud:connections-delete',
+  MONGO_HUD_CONNECTIONS_TEST: 'mongo-hud:connections-test',
+  MONGO_HUD_DOCS_LIST: 'mongo-hud:docs-list',
+  MONGO_HUD_DOCS_GET: 'mongo-hud:docs-get',
+  MONGO_HUD_DOCS_SAVE: 'mongo-hud:docs-save',
+  MONGO_HUD_DOCS_DELETE: 'mongo-hud:docs-delete',
+  MONGO_HUD_DOCS_EXPORT: 'mongo-hud:docs-export',
+  MONGO_HUD_DOCS_IMPORT: 'mongo-hud:docs-import',
+  MONGO_HUD_VERSIONS_LIST: 'mongo-hud:versions-list',
+  MONGO_HUD_VERSIONS_CREATE: 'mongo-hud:versions-create',
+  MONGO_HUD_VERSIONS_RESTORE: 'mongo-hud:versions-restore',
+  MONGO_HUD_PREVIEW_QUERY: 'mongo-hud:preview-query',
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

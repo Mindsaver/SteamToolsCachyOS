@@ -26,7 +26,20 @@ import type {
   ProtonUserSettingsListBackupsResult,
   ProtonUserSettingsReadBackupResult,
   ProtonUserSettingsSaveNamedBackupResult,
+  HudDocument,
+  HudVersionMeta,
+  MongoConnectionProfile,
+  MongoHudPreviewRequest,
+  MongoHudPreviewResult,
+  MangoHudConfigEntry,
+  MangoHudListBackupsResult,
+  MangoHudReadResult,
+  MangoHudReloadResult,
+  MangoHudSaveResult,
+  MangoHudStatus,
+  RunningFsrStatus,
 } from '../shared/types'
+import { parseMangoHudConfigText, serializeMangoHudEntries } from '../shared/mangohudConfig'
 import { formatUserSettingsPyFile, parseUserSettingsEnvFromText } from '../shared/userSettingsPy'
 import { transformLaunchOptions } from '../shared/launchOptions/compose'
 import {
@@ -107,6 +120,11 @@ const updateNotAvailCh = makeVoidListeners()
 const updateErrCh = makeChannel<(i: { message: string }) => void>()
 const compatProgCh = makeChannel<(p: CompatInstallProgress) => void>()
 const compatAvailCh = makeChannel<(p: CompatToolsUpdateAvailablePayload) => void>()
+const simMongoConnections = new Map<string, MongoConnectionProfile>()
+const simMongoDocs = new Map<string, HudDocument>()
+const simMongoVersions = new Map<string, Array<HudVersionMeta & { snapshot: HudDocument }>>()
+let simMangoHudRaw = 'fps=1\nframetime=1\nposition=top-left'
+const simMangoHudBackups = new Map<string, { rawText: string; mtimeMs: number }>()
 
 export const mockApi = {
   __simMode: true as const,
@@ -165,6 +183,34 @@ export const mockApi = {
   // ── FSR DLL ────────────────────────────────────────────────────────────────
   analyzeDll: async (_filePath: string) => { await delay(700); return { ok: true, data: MOCK_DLL_INFO } },
   copyDll: async (_dllPath: string) => { await simulateFsrStream(fsrCh.emit); return { ok: true } },
+  getRunningFsrStatus: async (_appId?: number | null): Promise<RunningFsrStatus> => {
+    await delay(60)
+    return {
+      indicatorState: 'fsr4-active',
+      indicatorRequested: true,
+      dllLoaded: true,
+      likelyActive: true,
+      detectedAppId: 730,
+      detectedGamePid: 4242,
+      dllPathKind: 'mapped',
+      mappedDlls: {
+        fsr: ['/home/arch/.steam/steam/steamapps/compatdata/730/pfx/drive_c/windows/system32/amdxcffx64.dll'],
+        dlss: [],
+        xess: [],
+      },
+      fsrVersion: '4.1.0',
+      mlfiVersion: '4.0.0',
+      framegenVersion: '4.1.0',
+      confidence: 'inferred',
+      label: 'FSR4 active (4.1.0 inferred)',
+      sourcePath: '/home/arch/.steam/steam/steamapps/compatdata/730/pfx/drive_c/windows/system32/amdxcffx64.dll',
+      updatedAt: Date.now(),
+    }
+  },
+  syncRunningFsrToMangoHud: async (_appId?: number | null): Promise<MangoHudReloadResult> => {
+    await delay(40)
+    return { ok: true, message: 'Simulated MangoHud runtime FSR text sync' }
+  },
   onFsrProgress: fsrCh.on,
 
   // ── GPU ────────────────────────────────────────────────────────────────────
@@ -344,6 +390,176 @@ export const mockApi = {
   openCompatUserSettings: async () => ({ ok: true as const }),
   onCompatToolsProgress: compatProgCh.on,
   onCompatToolsUpdateAvailable: compatAvailCh.on,
+
+  getMangoHudStatus: async (): Promise<MangoHudStatus> => {
+    await delay(20)
+    return {
+      configPath: '/home/arch/.config/MangoHud/MangoHud.conf',
+      configExists: true,
+      baselineBackupExists: true,
+    }
+  },
+  getMangoHudConfig: async (): Promise<MangoHudReadResult> => {
+    await delay(30)
+    const parsed = parseMangoHudConfigText(simMangoHudRaw)
+    return {
+      ok: true,
+      configPath: '/home/arch/.config/MangoHud/MangoHud.conf',
+      fileExists: true,
+      rawText: simMangoHudRaw,
+      entries: parsed.entries,
+    }
+  },
+  saveMangoHudConfig: async (payload: {
+    rawText?: string
+    entries?: MangoHudConfigEntry[]
+    makeNamedBackup?: string | null
+  }): Promise<MangoHudSaveResult> => {
+    await delay(40)
+    if (payload.makeNamedBackup) {
+      simMangoHudBackups.set(payload.makeNamedBackup, { rawText: simMangoHudRaw, mtimeMs: Date.now() })
+    }
+    simMangoHudRaw =
+      typeof payload.rawText === 'string'
+        ? payload.rawText
+        : serializeMangoHudEntries(payload.entries ?? [])
+    return { ok: true, configPath: '/home/arch/.config/MangoHud/MangoHud.conf' }
+  },
+  reloadMangoHud: async (): Promise<MangoHudReloadResult> => {
+    await delay(20)
+    return { ok: true, message: 'Simulated MangoHud reload signal' }
+  },
+  listMangoHudBackups: async (): Promise<MangoHudListBackupsResult> => {
+    await delay(20)
+    const entries = [...simMangoHudBackups.entries()]
+      .map(([fileName, v]) => ({ fileName, mtimeMs: v.mtimeMs }))
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    return { ok: true, entries }
+  },
+  readMangoHudBackup: async (fileName: string) => {
+    await delay(20)
+    const v = simMangoHudBackups.get(fileName)
+    if (!v) return { ok: false as const, error: 'Backup not found' }
+    return { ok: true as const, rawText: v.rawText }
+  },
+  restoreMangoHudBackup: async (fileName: string): Promise<MangoHudSaveResult> => {
+    await delay(20)
+    const v = simMangoHudBackups.get(fileName)
+    if (!v) return { ok: false, error: 'Backup not found' }
+    simMangoHudRaw = v.rawText
+    return { ok: true, configPath: '/home/arch/.config/MangoHud/MangoHud.conf' }
+  },
+
+  listMongoHudConnections: async (): Promise<MongoConnectionProfile[]> => {
+    await delay(50)
+    return [...simMongoConnections.values()]
+  },
+  saveMongoHudConnection: async (
+    profile: Pick<MongoConnectionProfile, 'id' | 'name' | 'connectionString' | 'database'>
+  ): Promise<MongoConnectionProfile> => {
+    await delay(70)
+    const ts = Date.now()
+    const id = profile.id || `conn_${Math.random().toString(36).slice(2, 9)}`
+    const next: MongoConnectionProfile = {
+      id,
+      name: profile.name,
+      connectionString: profile.connectionString,
+      database: profile.database,
+      createdAt: simMongoConnections.get(id)?.createdAt ?? ts,
+      updatedAt: ts,
+    }
+    simMongoConnections.set(id, next)
+    return next
+  },
+  deleteMongoHudConnection: async (id: string) => {
+    await delay(50)
+    return simMongoConnections.delete(id) ? { ok: true } : { ok: false, error: 'Connection not found' }
+  },
+  testMongoHudConnection: async (_connectionString: string) => {
+    await delay(140)
+    return { ok: true }
+  },
+  listMongoHudDocuments: async (): Promise<HudDocument[]> => {
+    await delay(50)
+    return [...simMongoDocs.values()]
+  },
+  getMongoHudDocument: async (id: string): Promise<HudDocument | null> => {
+    await delay(50)
+    return simMongoDocs.get(id) ?? null
+  },
+  saveMongoHudDocument: async (doc: HudDocument): Promise<HudDocument> => {
+    await delay(80)
+    const ts = Date.now()
+    const id = doc.id || `doc_${Math.random().toString(36).slice(2, 9)}`
+    const next = { ...doc, id, createdAt: doc.createdAt || ts, updatedAt: ts }
+    simMongoDocs.set(id, next)
+    return next
+  },
+  deleteMongoHudDocument: async (id: string) => {
+    await delay(50)
+    simMongoDocs.delete(id)
+    simMongoVersions.delete(id)
+    return { ok: true }
+  },
+  exportMongoHudDocument: async (id: string) => {
+    await delay(40)
+    const doc = simMongoDocs.get(id)
+    if (!doc) return { ok: false as const, error: 'Document not found' }
+    return { ok: true as const, json: JSON.stringify(doc, null, 2) }
+  },
+  importMongoHudDocument: async (jsonText: string) => {
+    await delay(50)
+    try {
+      const parsed = JSON.parse(jsonText) as HudDocument
+      const id = `doc_${Math.random().toString(36).slice(2, 9)}`
+      const next = { ...parsed, id, name: parsed.name || 'Imported HUD', createdAt: Date.now(), updatedAt: Date.now() }
+      simMongoDocs.set(id, next)
+      return { ok: true as const, doc: next }
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : 'Invalid JSON' }
+    }
+  },
+  listMongoHudVersions: async (documentId: string): Promise<HudVersionMeta[]> => {
+    await delay(30)
+    return (simMongoVersions.get(documentId) ?? []).map(({ snapshot: _snapshot, ...meta }) => meta)
+  },
+  createMongoHudVersion: async (payload: { documentId: string; label: string }) => {
+    await delay(60)
+    const doc = simMongoDocs.get(payload.documentId)
+    if (!doc) return { ok: false, error: 'Document not found' }
+    const versions = simMongoVersions.get(payload.documentId) ?? []
+    versions.push({
+      id: `ver_${Math.random().toString(36).slice(2, 9)}`,
+      documentId: payload.documentId,
+      label: payload.label || 'Version',
+      createdAt: Date.now(),
+      snapshot: JSON.parse(JSON.stringify(doc)) as HudDocument,
+    })
+    simMongoVersions.set(payload.documentId, versions)
+    return { ok: true }
+  },
+  restoreMongoHudVersion: async (versionId: string) => {
+    await delay(60)
+    for (const [docId, versions] of simMongoVersions.entries()) {
+      const version = versions.find((v) => v.id === versionId)
+      if (version) {
+        const restored = { ...version.snapshot, updatedAt: Date.now(), id: docId }
+        simMongoDocs.set(docId, restored)
+        return { ok: true as const, doc: restored }
+      }
+    }
+    return { ok: false as const, error: 'Version not found' }
+  },
+  previewMongoHudData: async (_req: MongoHudPreviewRequest): Promise<MongoHudPreviewResult> => {
+    await delay(120)
+    return {
+      ok: true,
+      rows: [
+        { fps: 144, frameTimeMs: 6.9, gpuTemp: 62, gpuUtil: 88, cpuUtil: 42, game: 'Demo Game' },
+        { fps: 139, frameTimeMs: 7.2, gpuTemp: 64, gpuUtil: 91, cpuUtil: 45, game: 'Demo Game' },
+      ],
+    }
+  },
 
   // ── Settings ───────────────────────────────────────────────────────────────
   getSettings: async (): Promise<AppSettings> => { await delay(80); return { ...simSettings } },

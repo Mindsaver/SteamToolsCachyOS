@@ -92,6 +92,68 @@ function extractVersions(strings: string[]): string[] {
   return [...versions].filter((v) => v !== '0.0.0' && !v.startsWith('0.0.'))
 }
 
+function hasRoleKeyword(str: string, role: string): boolean {
+  const lower = str.toLowerCase()
+  const kws = ROLE_KEYWORDS[role] ?? []
+  return kws.some((k) => lower.includes(k.keyword))
+}
+
+function bestSemver(versions: string[]): string | null {
+  if (versions.length === 0) return null
+  const sorted = [...versions].sort((a, b) => {
+    const aParts = a.split('.').map(Number)
+    const bParts = b.split('.').map(Number)
+    for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+      const diff = (bParts[i] ?? 0) - (aParts[i] ?? 0)
+      if (diff !== 0) return diff
+    }
+    return 0
+  })
+  return sorted[0]
+}
+
+function pickRoleScopedBestVersion(strings: string[], role: string): string | null {
+  const kws = (ROLE_KEYWORDS[role] ?? []).map((k) => k.keyword)
+  let best: { version: string; score: number } | null = null
+
+  for (let i = 0; i < strings.length; i++) {
+    if (!hasRoleKeyword(strings[i], role)) continue
+    // Prefer versions in same string, then near neighbors where version tags
+    // are often split from the symbol marker in binary string tables.
+    const start = Math.max(0, i - 3)
+    const end = Math.min(strings.length - 1, i + 3)
+    for (let j = start; j <= end; j++) {
+      const s = strings[j]
+      const lower = s.toLowerCase()
+      let keywordPos = Number.MAX_SAFE_INTEGER
+      for (const kw of kws) {
+        const idx = lower.indexOf(kw)
+        if (idx >= 0) keywordPos = Math.min(keywordPos, idx)
+      }
+
+      const re = new RegExp(SEMVER_RE.source, 'g')
+      let match: RegExpExecArray | null
+      while ((match = re.exec(s)) !== null) {
+        const v = match[1]
+        if (v === '0.0.0' || v.startsWith('0.0.')) continue
+        const localDist =
+          keywordPos === Number.MAX_SAFE_INTEGER ? 200 : Math.abs(match.index - keywordPos)
+        const windowPenalty = Math.abs(j - i) * 100
+        const beforeKeywordPenalty =
+          keywordPos !== Number.MAX_SAFE_INTEGER && j === i && match.index < keywordPos ? 500 : 0
+        const score = localDist + windowPenalty + beforeKeywordPenalty
+        if (!best || score < best.score) {
+          best = { version: v, score }
+        } else if (score === best.score) {
+          const higher = bestSemver([best.version, v])
+          if (higher && higher !== best.version) best = { version: higher, score }
+        }
+      }
+    }
+  }
+  return best?.version ?? null
+}
+
 function pickBestVersion(versions: string[], roleScore: number): string | null {
   if (versions.length === 0) return null
   // Prefer higher versions that look like proper semver
@@ -120,7 +182,8 @@ export function analyzeDll(filePath: string): DllVersionInfo {
     const score = roleScores[role] ?? 0
     if (score > 0) {
       roles.push(ROLE_LABEL[role] ?? role)
-      roleVersions[role] = pickBestVersion(allVersions, score)
+      const scopedBest = pickRoleScopedBestVersion(strings, role)
+      roleVersions[role] = scopedBest ?? pickBestVersion(allVersions, score)
     }
   }
 

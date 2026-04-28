@@ -42,6 +42,31 @@ export interface DllVersionInfo {
   rawVersions: string[]
 }
 
+export type RunningFsrIndicatorState = 'fsr4-active' | 'fsr-active' | 'not-detected'
+export type RunningFsrConfidence = 'indicator' | 'inferred' | 'unknown'
+
+export interface RunningFsrStatus {
+  indicatorState: RunningFsrIndicatorState
+  indicatorRequested: boolean
+  dllLoaded: boolean
+  likelyActive: boolean
+  detectedAppId: number | null
+  detectedGamePid: number | null
+  dllPathKind: 'mapped' | 'compatdata_fallback' | 'none'
+  mappedDlls: {
+    fsr: string[]
+    dlss: string[]
+    xess: string[]
+  }
+  fsrVersion: string | null
+  mlfiVersion: string | null
+  framegenVersion: string | null
+  confidence: RunningFsrConfidence
+  label: string
+  sourcePath: string | null
+  updatedAt: number
+}
+
 export type SymlinkMode = 'all' | 'folders' | 'dll'
 export type GameFilter = 'heuristic' | 'all'
 
@@ -256,3 +281,134 @@ export interface CompatToolsUpdateAvailablePayload {
   installedBestTag: string | null
   releaseUrl: string | null
 }
+
+export interface MangoHudConfigEntry {
+  key: string
+  value: string
+}
+
+export interface MangoHudConfigDoc {
+  entries: MangoHudConfigEntry[]
+  rawText: string
+}
+
+export interface MangoHudStatus {
+  configPath: string
+  configExists: boolean
+  baselineBackupExists: boolean
+}
+
+export type MangoHudReadResult =
+  | {
+      ok: true
+      configPath: string
+      fileExists: boolean
+      rawText: string
+      entries: MangoHudConfigEntry[]
+    }
+  | { ok: false; error: string }
+
+export type MangoHudSaveResult =
+  | { ok: true; configPath: string }
+  | { ok: false; error: string }
+
+export type MangoHudReloadResult =
+  | { ok: true; message: string }
+  | { ok: false; error: string }
+
+export type MangoHudListBackupsResult =
+  | { ok: true; entries: Array<{ fileName: string; mtimeMs: number }> }
+  | { ok: false; error: string }
+
+export interface MongoConnectionProfile {
+  id: string
+  name: string
+  connectionString: string
+  database: string
+  createdAt: number
+  updatedAt: number
+}
+
+export type HudWidgetKind = 'text' | 'icon' | 'bar' | 'stat_card' | 'panel'
+
+export interface HudWidgetStyle {
+  color?: string
+  backgroundColor?: string
+  fontSize?: number
+  fontWeight?: number
+  opacity?: number
+  borderRadius?: number
+  borderWidth?: number
+  borderColor?: string
+  padding?: number
+  shadow?: string
+}
+
+export interface HudWidgetBinding {
+  mode: 'static' | 'field'
+  staticValue?: string | number
+  fieldPath?: string
+}
+
+export interface HudWidget {
+  id: string
+  kind: HudWidgetKind
+  x: number
+  y: number
+  w: number
+  h: number
+  title: string
+  style: HudWidgetStyle
+  bindings: Record<string, HudWidgetBinding>
+}
+
+export interface HudTheme {
+  name: string
+  background: string
+  foreground: string
+  accent: string
+  surface: string
+  fontFamily: string
+}
+
+export interface HudLayout {
+  width: number
+  height: number
+  gridSize: number
+}
+
+export interface HudDocument {
+  id: string
+  name: string
+  connectionId: string | null
+  collection: string | null
+  query: string
+  projection: string
+  limit: number
+  layout: HudLayout
+  theme: HudTheme
+  widgets: HudWidget[]
+  createdAt: number
+  updatedAt: number
+}
+
+export interface HudVersionMeta {
+  id: string
+  documentId: string
+  label: string
+  createdAt: number
+}
+
+export interface MongoHudPreviewRequest {
+  connectionId: string
+  collection: string
+  query: string
+  projection: string
+  limit: number
+}
+
+export type MongoHudPreviewResult =
+  | { ok: true; rows: Record<string, unknown>[] }
+  | { ok: false; error: string }
+
+export type MongoHudSaveResult = { ok: true } | { ok: false; error: string }

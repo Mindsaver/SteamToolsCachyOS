@@ -25,6 +25,18 @@ import type {
   ProtonUserSettingsListBackupsResult,
   ProtonUserSettingsReadBackupResult,
   ProtonUserSettingsSaveNamedBackupResult,
+  HudDocument,
+  HudVersionMeta,
+  MongoConnectionProfile,
+  MongoHudPreviewRequest,
+  MongoHudPreviewResult,
+  MangoHudConfigEntry,
+  MangoHudListBackupsResult,
+  MangoHudReadResult,
+  MangoHudReloadResult,
+  MangoHudSaveResult,
+  MangoHudStatus,
+  RunningFsrStatus,
 } from '../shared/types'
 
 // VITE_SIM is replaced at build time by electron-vite define.
@@ -65,6 +77,10 @@ const realApi = {
 
   analyzeDll: (filePath: string) => ipcRenderer.invoke(IPC.FSR_ANALYZE_DLL, filePath),
   copyDll: (dllPath: string) => ipcRenderer.invoke(IPC.FSR_COPY_DLL, { dllPath }),
+  getRunningFsrStatus: (appId?: number | null): Promise<RunningFsrStatus> =>
+    ipcRenderer.invoke(IPC.FSR_RUNTIME_STATUS, { appId: appId ?? null }),
+  syncRunningFsrToMangoHud: (appId?: number | null): Promise<MangoHudReloadResult> =>
+    ipcRenderer.invoke(IPC.FSR_RUNTIME_SYNC_TO_MANGOHUD, { appId: appId ?? null }),
   onFsrProgress: (cb: (p: SymlinkProgress) => void) => {
     const handler = (_: unknown, p: SymlinkProgress) => cb(p)
     ipcRenderer.on(IPC.FSR_PROGRESS, handler)
@@ -126,6 +142,46 @@ const realApi = {
     ipcRenderer.on(IPC.COMPAT_TOOLS_UPDATE_AVAILABLE, handler)
     return () => ipcRenderer.removeListener(IPC.COMPAT_TOOLS_UPDATE_AVAILABLE, handler)
   },
+
+  getMangoHudStatus: (): Promise<MangoHudStatus> => ipcRenderer.invoke(IPC.MANGOHUD_STATUS),
+  getMangoHudConfig: (): Promise<MangoHudReadResult> => ipcRenderer.invoke(IPC.MANGOHUD_CONFIG_GET),
+  saveMangoHudConfig: (payload: {
+    rawText?: string
+    entries?: MangoHudConfigEntry[]
+    makeNamedBackup?: string | null
+  }): Promise<MangoHudSaveResult> => ipcRenderer.invoke(IPC.MANGOHUD_CONFIG_SAVE, payload),
+  reloadMangoHud: (): Promise<MangoHudReloadResult> => ipcRenderer.invoke(IPC.MANGOHUD_RELOAD),
+  listMangoHudBackups: (): Promise<MangoHudListBackupsResult> => ipcRenderer.invoke(IPC.MANGOHUD_BACKUPS_LIST),
+  readMangoHudBackup: (fileName: string): Promise<{ ok: true; rawText: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke(IPC.MANGOHUD_BACKUPS_READ, fileName),
+  restoreMangoHudBackup: (fileName: string): Promise<MangoHudSaveResult> =>
+    ipcRenderer.invoke(IPC.MANGOHUD_BACKUPS_RESTORE, fileName),
+
+  listMongoHudConnections: (): Promise<MongoConnectionProfile[]> =>
+    ipcRenderer.invoke(IPC.MONGO_HUD_CONNECTIONS_LIST),
+  saveMongoHudConnection: (profile: Pick<MongoConnectionProfile, 'id' | 'name' | 'connectionString' | 'database'>) =>
+    ipcRenderer.invoke(IPC.MONGO_HUD_CONNECTIONS_SAVE, profile),
+  deleteMongoHudConnection: (id: string) => ipcRenderer.invoke(IPC.MONGO_HUD_CONNECTIONS_DELETE, id),
+  testMongoHudConnection: (connectionString: string) =>
+    ipcRenderer.invoke(IPC.MONGO_HUD_CONNECTIONS_TEST, { connectionString }),
+  listMongoHudDocuments: (): Promise<HudDocument[]> => ipcRenderer.invoke(IPC.MONGO_HUD_DOCS_LIST),
+  getMongoHudDocument: (id: string): Promise<HudDocument | null> => ipcRenderer.invoke(IPC.MONGO_HUD_DOCS_GET, id),
+  saveMongoHudDocument: (doc: HudDocument): Promise<HudDocument> => ipcRenderer.invoke(IPC.MONGO_HUD_DOCS_SAVE, doc),
+  deleteMongoHudDocument: (id: string) => ipcRenderer.invoke(IPC.MONGO_HUD_DOCS_DELETE, id),
+  exportMongoHudDocument: (id: string): Promise<{ ok: true; json: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke(IPC.MONGO_HUD_DOCS_EXPORT, id),
+  importMongoHudDocument: (jsonText: string): Promise<{ ok: true; doc: HudDocument } | { ok: false; error: string }> =>
+    ipcRenderer.invoke(IPC.MONGO_HUD_DOCS_IMPORT, { jsonText }),
+  listMongoHudVersions: (documentId: string): Promise<HudVersionMeta[]> =>
+    ipcRenderer.invoke(IPC.MONGO_HUD_VERSIONS_LIST, documentId),
+  createMongoHudVersion: (payload: { documentId: string; label: string }) =>
+    ipcRenderer.invoke(IPC.MONGO_HUD_VERSIONS_CREATE, payload),
+  restoreMongoHudVersion: (
+    versionId: string
+  ): Promise<{ ok: true; doc: HudDocument } | { ok: false; error: string }> =>
+    ipcRenderer.invoke(IPC.MONGO_HUD_VERSIONS_RESTORE, versionId),
+  previewMongoHudData: (req: MongoHudPreviewRequest): Promise<MongoHudPreviewResult> =>
+    ipcRenderer.invoke(IPC.MONGO_HUD_PREVIEW_QUERY, req),
 
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.SETTINGS_GET),
   setSettings: (settings: AppSettings) => ipcRenderer.invoke(IPC.SETTINGS_SET, settings),

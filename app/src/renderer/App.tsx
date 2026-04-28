@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Routes, Route, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -8,6 +8,7 @@ import {
   Settings as SettingsIcon,
   Package,
   FileCog,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { Toaster, toast } from 'sonner'
 import { cn } from './lib/utils'
@@ -19,6 +20,7 @@ import { FsrDll } from './routes/FsrDll'
 import { LaunchOptions } from './routes/LaunchOptions'
 import { ProtonUserSettings } from './routes/ProtonUserSettings'
 import { CompatTools } from './routes/CompatTools'
+import { MangoHudLive } from './routes/MangoHudLive'
 import { Settings } from './routes/Settings'
 import { AboutDialog } from './components/AboutDialog'
 import { api } from './lib/ipc'
@@ -34,12 +36,24 @@ const NAV_ITEMS = [
   { to: '/launch-options', label: 'Launch Options', icon: Gamepad2 },
   { to: '/proton-user-settings', label: 'Proton user settings', icon: FileCog },
   { to: '/compat-tools', label: 'Compat tools', icon: Package },
+  { to: '/mangohud-live', label: 'MangoHud Editor', icon: SlidersHorizontal },
 ]
+
+const MANGOHUD_AUTO_SYNC_KEY = 'mangohudAutoSyncEnabled'
+const MANGOHUD_AUTO_SYNC_EVENT = 'mangohud-auto-sync-changed'
 
 export default function App() {
   const navigate = useNavigate()
   const [aboutOpen, setAboutOpen] = useState(false)
   const [appVersion, setAppVersion] = useState<string | null>(null)
+  const [mangoHudAutoSync, setMangoHudAutoSync] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(MANGOHUD_AUTO_SYNC_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const lastRuntimeSigRef = useRef<string>('')
 
   useEffect(() => {
     return api.onShowAbout(() => setAboutOpen(true))
@@ -61,6 +75,65 @@ export default function App() {
   useEffect(() => {
     void api.getAboutInfo().then((i) => setAppVersion(i.version))
   }, [])
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== MANGOHUD_AUTO_SYNC_KEY) return
+      setMangoHudAutoSync(e.newValue === '1')
+    }
+    const onLocalEvent = () => {
+      try {
+        setMangoHudAutoSync(window.localStorage.getItem(MANGOHUD_AUTO_SYNC_KEY) === '1')
+      } catch {
+        setMangoHudAutoSync(false)
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    window.addEventListener(MANGOHUD_AUTO_SYNC_EVENT, onLocalEvent)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener(MANGOHUD_AUTO_SYNC_EVENT, onLocalEvent)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!mangoHudAutoSync) return
+    let cancelled = false
+    let running = false
+
+    const tick = async () => {
+      if (running || cancelled) return
+      running = true
+      try {
+        const status = await api.getRunningFsrStatus()
+        const sig = [
+          status.label,
+          status.fsrVersion ?? '',
+          status.mlfiVersion ?? '',
+          status.framegenVersion ?? '',
+          status.sourcePath ?? '',
+          String(status.detectedAppId ?? ''),
+        ].join('|')
+        if (sig !== lastRuntimeSigRef.current) {
+          lastRuntimeSigRef.current = sig
+          await api.syncRunningFsrToMangoHud(status.detectedAppId)
+        }
+      } catch {
+        // Keep background loop best-effort; do not spam toasts.
+      } finally {
+        running = false
+      }
+    }
+
+    void tick()
+    const t = setInterval(() => {
+      void tick()
+    }, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(t)
+    }
+  }, [mangoHudAutoSync])
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
@@ -152,6 +225,7 @@ export default function App() {
             <Route path="/launch-options" element={<LaunchOptions />} />
             <Route path="/proton-user-settings" element={<ProtonUserSettings />} />
             <Route path="/compat-tools" element={<CompatTools />} />
+            <Route path="/mangohud-live" element={<MangoHudLive />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>

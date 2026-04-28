@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { FolderSymlink, Cpu, Gamepad2, ChevronRight, HardDrive, Users, Package } from 'lucide-react'
+import { FolderSymlink, Cpu, Gamepad2, ChevronRight, HardDrive, Users, Package, SlidersHorizontal } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
@@ -132,7 +132,7 @@ export function Dashboard() {
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
           Quick actions
         </h2>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <Link to="/symlink">
             <Card className="hover:border-primary/50 hover:bg-muted/10 transition-colors cursor-pointer group">
               <CardHeader>
@@ -204,6 +204,25 @@ export function Dashboard() {
               <CardContent>
                 <p className="text-sm text-muted-foreground">
                   Install GE-Proton or Proton-CachyOS into Steam, optional auto update from GitHub, and open tool folders.
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <Link to="/mangohud-live">
+            <Card className="hover:border-primary/50 hover:bg-muted/10 transition-colors cursor-pointer group">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <SlidersHorizontal className="h-5 w-5 text-primary" />
+                    MangoHud Editor
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  Read active system MangoHud settings, edit full catalog options, and apply live reload.
                 </p>
               </CardContent>
             </Card>

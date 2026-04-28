@@ -45,15 +45,47 @@ import type {
   ProtonUserSettingsListBackupsResult,
   ProtonUserSettingsReadBackupResult,
   ProtonUserSettingsSaveNamedBackupResult,
+  HudDocument,
+  MangoHudConfigEntry,
+  MongoConnectionProfile,
+  MongoHudPreviewRequest,
+  RunningFsrStatus,
 } from '../shared/types'
 import { parseUserSettingsEnvFromText } from '../shared/userSettingsPy'
 import { runSymlinkHub } from './services/symlink/hub'
 import { analyzeDll } from './services/fsr/ffx'
 import { copyDllToGames } from './services/fsr/copy'
+import { getRunningFsrStatus } from './services/fsr/runtime'
 import { detectGpuVendors } from './services/gpu/detect'
 import { transformLaunchOptions } from '../shared/launchOptions/compose'
 import { loadSettings, saveSettings } from './services/settings'
 import { checkForUpdates, downloadUpdate, installUpdate } from './services/updater'
+import {
+  createMongoHudVersion,
+  deleteMongoHudConnection,
+  deleteMongoHudDocument,
+  exportMongoHudDocument,
+  getMongoHudDocument,
+  importMongoHudDocument,
+  listMongoHudConnections,
+  listMongoHudDocuments,
+  listMongoHudVersions,
+  restoreMongoHudVersion,
+  runMongoHudPreviewQuery,
+  saveMongoHudConnection,
+  saveMongoHudDocument,
+  testMongoHudConnection,
+} from './services/mongoHud'
+import {
+  getMangoHudStatus,
+  listMangoHudBackups,
+  readMangoHudBackup,
+  readMangoHudConfig,
+  reloadMangoHudLive,
+  restoreMangoHudBackup,
+  saveMangoHudConfig,
+  syncRuntimeFsrTextToMangoHud,
+} from './services/mangohud'
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // ── Steam ──────────────────────────────────────────────────────────────────
 
@@ -232,6 +264,26 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return { ok: false, error: String(e) }
     }
   })
+
+  ipcMain.handle(IPC.FSR_RUNTIME_STATUS, async (_e, payload?: { appId?: number | null }) => {
+    const settings = loadSettings()
+    const installPath = settings.steamPath || resolveSteamInstall()
+    const appId = payload?.appId ?? null
+    return getRunningFsrStatus(installPath, typeof appId === 'number' ? appId : null)
+  })
+  ipcMain.handle(
+    IPC.FSR_RUNTIME_SYNC_TO_MANGOHUD,
+    async (_e, payload?: { appId?: number | null }) => {
+      const settings = loadSettings()
+      const installPath = settings.steamPath || resolveSteamInstall()
+      const appId = payload?.appId ?? null
+      const status: RunningFsrStatus = getRunningFsrStatus(
+        installPath,
+        typeof appId === 'number' ? appId : null
+      )
+      return syncRuntimeFsrTextToMangoHud(status)
+    }
+  )
 
   // ── Localconfig backup ─────────────────────────────────────────────────────
 
@@ -552,4 +604,45 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.SHELL_OPEN_EXTERNAL, async (_e, url: string) => {
     await shell.openExternal(url)
   })
+
+  // ── MangoHud system config ─────────────────────────────────────────────────
+
+  ipcMain.handle(IPC.MANGOHUD_STATUS, () => getMangoHudStatus())
+  ipcMain.handle(IPC.MANGOHUD_CONFIG_GET, () => readMangoHudConfig())
+  ipcMain.handle(
+    IPC.MANGOHUD_CONFIG_SAVE,
+    (_e, payload: { rawText?: string; entries?: MangoHudConfigEntry[]; makeNamedBackup?: string | null }) =>
+      saveMangoHudConfig(payload)
+  )
+  ipcMain.handle(IPC.MANGOHUD_RELOAD, () => reloadMangoHudLive())
+  ipcMain.handle(IPC.MANGOHUD_BACKUPS_LIST, () => listMangoHudBackups())
+  ipcMain.handle(IPC.MANGOHUD_BACKUPS_READ, (_e, fileName: string) => readMangoHudBackup(fileName))
+  ipcMain.handle(IPC.MANGOHUD_BACKUPS_RESTORE, (_e, fileName: string) => restoreMangoHudBackup(fileName))
+
+  // ── Mongo HUD editor ────────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC.MONGO_HUD_CONNECTIONS_LIST, () => listMongoHudConnections())
+  ipcMain.handle(
+    IPC.MONGO_HUD_CONNECTIONS_SAVE,
+    async (_e, profile: Pick<MongoConnectionProfile, 'id' | 'name' | 'connectionString' | 'database'>) =>
+      saveMongoHudConnection(profile)
+  )
+  ipcMain.handle(IPC.MONGO_HUD_CONNECTIONS_DELETE, async (_e, id: string) => deleteMongoHudConnection(id))
+  ipcMain.handle(
+    IPC.MONGO_HUD_CONNECTIONS_TEST,
+    async (_e, payload: { connectionString: string }) => testMongoHudConnection(payload.connectionString)
+  )
+  ipcMain.handle(IPC.MONGO_HUD_DOCS_LIST, () => listMongoHudDocuments())
+  ipcMain.handle(IPC.MONGO_HUD_DOCS_GET, (_e, id: string) => getMongoHudDocument(id))
+  ipcMain.handle(IPC.MONGO_HUD_DOCS_SAVE, (_e, doc: HudDocument) => saveMongoHudDocument(doc))
+  ipcMain.handle(IPC.MONGO_HUD_DOCS_DELETE, (_e, id: string) => deleteMongoHudDocument(id))
+  ipcMain.handle(IPC.MONGO_HUD_DOCS_EXPORT, (_e, id: string) => exportMongoHudDocument(id))
+  ipcMain.handle(IPC.MONGO_HUD_DOCS_IMPORT, (_e, payload: { jsonText: string }) => importMongoHudDocument(payload.jsonText))
+  ipcMain.handle(IPC.MONGO_HUD_VERSIONS_LIST, (_e, documentId: string) => listMongoHudVersions(documentId))
+  ipcMain.handle(
+    IPC.MONGO_HUD_VERSIONS_CREATE,
+    (_e, payload: { documentId: string; label: string }) => createMongoHudVersion(payload.documentId, payload.label)
+  )
+  ipcMain.handle(IPC.MONGO_HUD_VERSIONS_RESTORE, (_e, versionId: string) => restoreMongoHudVersion(versionId))
+  ipcMain.handle(IPC.MONGO_HUD_PREVIEW_QUERY, (_e, req: MongoHudPreviewRequest) => runMongoHudPreviewQuery(req))
 }
