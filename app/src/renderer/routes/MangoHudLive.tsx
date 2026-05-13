@@ -15,9 +15,25 @@ import type {
   MangoHudConfigEntry,
   MangoHudProfile,
   MangoHudProfileApplyMode,
+  MangoHudProfilesListResult,
   MangoHudRuntimeTextStyle,
   RunningFsrStatus,
 } from '../../shared/types'
+
+type MangoHudProfilesListOk = Extract<MangoHudProfilesListResult, { ok: true }>
+
+function profileResolutionSourceLabel(source: 'specific' | 'default' | 'manual' | 'none'): { short: string; title: string } {
+  switch (source) {
+    case 'specific':
+      return { short: 'Per game', title: 'This game has its own linked profile.' }
+    case 'default':
+      return { short: 'Fallback', title: 'No per-game link; using the fallback profile.' }
+    case 'manual':
+      return { short: 'Fixed (all games)', title: 'Single-profile mode: every game uses the same profile.' }
+    case 'none':
+      return { short: 'None', title: 'No profile applies for this game in the current mode.' }
+  }
+}
 
 type FieldType = 'boolean' | 'number' | 'string' | 'list' | 'color' | 'select'
 type ListKind = 'color-list' | 'number-list' | 'string-list'
@@ -297,20 +313,27 @@ export function MangoHudLive() {
     setRuntimeFsr(s)
   }
 
-  const listProfiles = async () => {
+  const listProfiles = async (): Promise<MangoHudProfilesListOk | null> => {
     const result = await api.listMangoHudProfiles()
     if (!result.ok) {
       toast.error(result.error)
-      return
+      return null
     }
     setProfiles(result.profiles)
     setAssignments(result.assignments)
     setProfileApplyMode(result.applyMode)
     setDefaultProfileId(result.defaultProfileId)
     setSelectedProfileId((prev) => {
+      if (result.applyMode === 'manual') {
+        if (result.defaultProfileId && result.profiles.some((p) => p.id === result.defaultProfileId)) {
+          return result.defaultProfileId
+        }
+        return ''
+      }
       if (prev && result.profiles.some((profile) => profile.id === prev)) return prev
       return result.profiles[0]?.id ?? ''
     })
+    return result
   }
 
   const saveThenReload = async (payload: {
@@ -532,29 +555,50 @@ export function MangoHudLive() {
     await listProfiles()
   }
 
-  const handleSaveProfileSettings = async (nextMode: MangoHudProfileApplyMode, nextDefaultProfileId: string | null) => {
+  const handleSaveProfileSettings = async (
+    nextMode: MangoHudProfileApplyMode,
+    nextDefaultProfileId: string | null
+  ): Promise<MangoHudProfilesListOk | null> => {
     const result = await api.saveMangoHudProfileSettings({
       applyMode: nextMode,
       defaultProfileId: nextDefaultProfileId,
     })
     if (!result.ok) {
       toast.error(result.error)
-      return false
+      return null
     }
-    setProfileApplyMode(nextMode)
-    setDefaultProfileId(nextDefaultProfileId)
-    await listProfiles()
-    return true
+    return listProfiles()
   }
 
   const handleModeChange = async (nextMode: MangoHudProfileApplyMode) => {
-    const ok = await handleSaveProfileSettings(nextMode, defaultProfileId)
-    if (ok) toast.success(nextMode === 'manual' ? 'Manual override mode enabled' : 'Auto-detect mode enabled')
+    const listed = await handleSaveProfileSettings(nextMode, defaultProfileId)
+    if (!listed) return
+    toast.success(
+      nextMode === 'manual' ? 'Using one profile for all games' : 'Using per-game links with fallback'
+    )
+    if (nextMode === 'manual' && listed.defaultProfileId) {
+      const p = listed.profiles.find((x) => x.id === listed.defaultProfileId)
+      if (p) applyProfile(p)
+    }
   }
 
   const handleDefaultProfileChange = async (nextDefaultProfileId: string | null) => {
-    const ok = await handleSaveProfileSettings(profileApplyMode, nextDefaultProfileId)
-    if (ok) toast.success(nextDefaultProfileId ? 'Default profile updated' : 'Default profile cleared')
+    const modeBefore = profileApplyMode
+    const listed = await handleSaveProfileSettings(profileApplyMode, nextDefaultProfileId)
+    if (!listed) return
+    toast.success(
+      modeBefore === 'manual'
+        ? nextDefaultProfileId
+          ? 'Profile in use updated'
+          : 'Cleared profile in use'
+        : nextDefaultProfileId
+          ? 'Fallback profile updated'
+          : 'Fallback cleared'
+    )
+    if (modeBefore === 'manual' && nextDefaultProfileId) {
+      const p = listed.profiles.find((x) => x.id === nextDefaultProfileId)
+      if (p) applyProfile(p)
+    }
   }
 
   const handleAutoAssignDetected = async () => {
@@ -588,7 +632,15 @@ export function MangoHudLive() {
     if (!assigned.ok) return toast.error(assigned.error)
     setCreateSuccess({ profileId: profile.id, appId: appIdNumber })
     toast.success('Profile created and assigned')
-    await listProfiles()
+    if (profileApplyMode === 'manual') {
+      const listed = await handleSaveProfileSettings('manual', profile.id)
+      if (listed?.defaultProfileId) {
+        const p = listed.profiles.find((x) => x.id === listed.defaultProfileId)
+        if (p) applyProfile(p)
+      }
+    } else {
+      await listProfiles()
+    }
   }
 
   useEffect(() => {
@@ -883,87 +935,155 @@ export function MangoHudLive() {
               </p>
             ) : null}
             {profilesExpanded ? (
-              <div className="space-y-2 pt-0.5">
-                <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(220px,1fr)_minmax(220px,1fr)_auto] gap-2 items-center">
+              <div className="space-y-3 pt-0.5">
+                <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                  <label className="text-xs font-medium text-muted-foreground">How games get a profile</label>
                   <Select
                     value={profileApplyMode}
                     onChange={(e) => void handleModeChange(e.target.value as MangoHudProfileApplyMode)}
                   >
-                    <option value="manual">Manual override</option>
-                    <option value="auto-detect">Auto detect</option>
+                    <option value="manual">Use one profile for all games</option>
+                    <option value="auto-detect">Use per-game assignments + fallback</option>
                   </Select>
-                  <Select
-                    value={defaultProfileId ?? ''}
-                    onChange={(e) => {
-                      const nextId = e.target.value || null
-                      void handleDefaultProfileChange(nextId)
-                    }}
-                  >
-                    <option value="">Default profile…</option>
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}
-                      </option>
-                    ))}
-                  </Select>
-                  <Select
-                    value={selectedProfileId}
-                    onChange={(e) => {
-                      const nextId = e.target.value
-                      setSelectedProfileId(nextId)
-                      const selected = profiles.find((profile) => profile.id === nextId)
-                      setProfileNameInput(selected?.name ?? '')
-                    }}
-                  >
-                    <option value="">Select profile…</option>
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void handleAutoAssignDetected()}
-                    disabled={profileApplyMode !== 'auto-detect' || !selectedProfileId || !runtimeFsr?.detectedAppId}
-                  >
-                    <WandSparkles className="h-3.5 w-3.5 mr-1" />
-                    Auto set from game detection
-                  </Button>
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    {profileApplyMode === 'manual'
+                      ? 'Per-game links are stored but ignored for resolution. Everyone uses the profile you pick below.'
+                      : 'Each game can link to a profile. If a game has no link, the fallback profile is used.'}
+                  </p>
                 </div>
-                <div className="flex flex-wrap gap-2 items-center">
-                  {runtimeFsr?.detectedAppId ? <Badge variant="outline">Detected AppID {runtimeFsr.detectedAppId}</Badge> : null}
-                  {defaultProfileName ? <Badge variant="outline">Default: {defaultProfileName}</Badge> : null}
-                  {assignedProfileName ? <Badge variant="outline">Selected game specific: {assignedProfileName}</Badge> : null}
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-2">
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground font-medium">Match existing profile to game</p>
-                    <div className="flex gap-2 flex-wrap">
-                      <Button size="sm" variant="outline" onClick={() => selectedProfile && applyProfile(selectedProfile)} disabled={!selectedProfile}>
-                        Apply now
-                      </Button>
-                      <Select value={quickAppId} onChange={(e) => setQuickAppId(e.target.value)} className="min-w-[220px]">
-                        <option value="">Select game to match…</option>
-                        {sortedGames.map((game) => (
-                          <option key={game.appId} value={String(game.appId)}>
-                            {game.name} ({game.appId})
+
+                {profileApplyMode === 'manual' ? (
+                  <div className="space-y-1.5 rounded-lg border border-border/60 p-2.5">
+                    <label className="text-xs font-medium text-muted-foreground">Profile in use</label>
+                    <Select
+                      value={defaultProfileId ?? ''}
+                      onChange={(e) => void handleDefaultProfileChange(e.target.value || null)}
+                    >
+                      <option value="">None…</option>
+                      {profiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.name}
+                        </option>
+                      ))}
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      This profile is loaded into the editor and used as the single active profile for all games.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-1.5 rounded-lg border border-border/60 p-2.5">
+                      <label className="text-xs font-medium text-muted-foreground">Fallback profile</label>
+                      <Select
+                        value={defaultProfileId ?? ''}
+                        onChange={(e) => void handleDefaultProfileChange(e.target.value || null)}
+                      >
+                        <option value="">No fallback…</option>
+                        {profiles.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.name}
                           </option>
                         ))}
                       </Select>
+                      <p className="text-[11px] text-muted-foreground leading-snug">
+                        Used when a game has no linked profile.
+                      </p>
+                    </div>
+                    <div className="space-y-1.5 rounded-lg border border-border/60 p-2.5">
+                      <label className="text-xs font-medium text-muted-foreground">Profile open for editing</label>
+                      <Select
+                        value={selectedProfileId}
+                        onChange={(e) => {
+                          const nextId = e.target.value
+                          setSelectedProfileId(nextId)
+                          const selected = profiles.find((profile) => profile.id === nextId)
+                          setProfileNameInput(selected?.name ?? '')
+                        }}
+                      >
+                        <option value="">Select profile…</option>
+                        {profiles.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.name}
+                          </option>
+                        ))}
+                      </Select>
+                      <p className="text-[11px] text-muted-foreground leading-snug">
+                        Changing the fallback does not switch the catalog. Choose a profile here, then use Apply now to load it into the editor.
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                <div className="space-y-1.5 rounded-lg border border-border/60 p-2.5">
+                  <label className="text-xs font-medium text-muted-foreground">Focus game</label>
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    Pick the game for linking, unassigning, or creating a profile. Runtime detection can fill AppID when a game is running.
+                  </p>
+                  <div className="flex flex-wrap gap-2 items-end">
+                    <Select value={quickAppId} onChange={(e) => setQuickAppId(e.target.value)} className="min-w-[220px]">
+                      <option value="">Choose from library…</option>
+                      {sortedGames.map((game) => (
+                        <option key={game.appId} value={String(game.appId)}>
+                          {game.name} ({game.appId})
+                        </option>
+                      ))}
+                    </Select>
+                    <Input
+                      className="h-9 w-28"
+                      value={quickAppId}
+                      onChange={(e) => setQuickAppId(e.target.value)}
+                      placeholder="AppID"
+                      inputMode="numeric"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void handleAutoAssignDetected()}
+                      disabled={profileApplyMode !== 'auto-detect' || !selectedProfileId || !runtimeFsr?.detectedAppId}
+                    >
+                      <WandSparkles className="h-3.5 w-3.5 mr-1" />
+                      Assign editing profile to detected game
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2 items-center pt-0.5">
+                    {runtimeFsr?.detectedAppId ? (
+                      <Badge variant="outline">Detected AppID {runtimeFsr.detectedAppId}</Badge>
+                    ) : null}
+                    {profileApplyMode === 'manual' ? (
+                      <Badge variant="outline">All games: {defaultProfileName ?? '—'}</Badge>
+                    ) : (
+                      <Badge variant="outline">Fallback: {defaultProfileName ?? '—'}</Badge>
+                    )}
+                    {appIdValid ? (
+                      <Badge variant="outline">Focused game link: {assignedProfileName ?? '—'}</Badge>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-2">
+                  <div className="space-y-2 rounded-lg border border-border/60 p-2.5">
+                    <p className="text-xs font-medium text-muted-foreground">Link profile to focused game</p>
+                    <div className="flex gap-2 flex-wrap items-center">
+                      <Button size="sm" variant="outline" onClick={() => selectedProfile && applyProfile(selectedProfile)} disabled={!selectedProfile}>
+                        Apply now
+                      </Button>
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => void handleAssignProfile(selectedProfileId || null)}
                         disabled={!selectedProfileId || !appIdValid}
                       >
-                        Match selected profile
+                        Link current profile
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => void handleAssignProfile(null)} disabled={!appIdValid || !assignedProfileId}>
-                        Unassign game
+                        Unassign focused game
                       </Button>
                     </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      {profileApplyMode === 'manual'
+                        ? 'Links are saved but ignored while “one profile for all games” is on. Uses the profile in use.'
+                        : 'Links the profile under “Profile open for editing” to the focused game.'}
+                    </p>
                     <div className="flex gap-2 flex-wrap">
                       <Input
                         className="h-8 w-56"
@@ -983,19 +1103,8 @@ export function MangoHudLive() {
                       </Button>
                     </div>
                   </div>
-                  <div className="space-y-2 rounded border border-border/60 p-2">
-                    <p className="text-xs text-muted-foreground font-medium">Create profile for this game</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      <Select value={quickAppId} onChange={(e) => setQuickAppId(e.target.value)}>
-                        <option value="">Select game / AppID…</option>
-                        {sortedGames.map((game) => (
-                          <option key={game.appId} value={String(game.appId)}>
-                            {game.name} ({game.appId})
-                          </option>
-                        ))}
-                      </Select>
-                      <Input value={quickAppId} onChange={(e) => setQuickAppId(e.target.value)} placeholder="Manual AppID" />
-                    </div>
+                  <div className="space-y-2 rounded-lg border border-border/60 p-2.5">
+                    <p className="text-xs font-medium text-muted-foreground">Create profile for focused game</p>
                     <Input
                       value={profileNameInput}
                       onChange={(e) => setProfileNameInput(e.target.value)}
@@ -1011,10 +1120,14 @@ export function MangoHudLive() {
                       <div className="rounded border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs">
                         <p className="font-medium">Profile created and assigned.</p>
                         <div className="mt-1 flex gap-2">
-                          <Button size="sm" variant="outline" onClick={() => {
-                            const p = profiles.find((x) => x.id === createSuccess.profileId)
-                            if (p) applyProfile(p)
-                          }}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              const p = profiles.find((x) => x.id === createSuccess.profileId)
+                              if (p) applyProfile(p)
+                            }}
+                          >
                             Apply now
                           </Button>
                           <Button size="sm" variant="outline" onClick={() => setCreateSuccess(null)}>
@@ -1025,9 +1138,12 @@ export function MangoHudLive() {
                     ) : null}
                   </div>
                 </div>
+
                 <Card className="border-border/70 bg-background">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Game profile mapping</CardTitle>
+                    <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Which profile each game uses
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2">
                     <div className="max-h-64 overflow-auto rounded border border-border/60">
@@ -1035,25 +1151,30 @@ export function MangoHudLive() {
                         <thead className="bg-muted/30 sticky top-0">
                           <tr>
                             <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Game</th>
-                            <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Specific profile</th>
-                            <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Resolved profile</th>
-                            <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Source</th>
+                            <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Linked profile</th>
+                            <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Resulting profile</th>
+                            <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Why</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {mappingRows.map((row) => (
-                            <tr key={row.appId} className="border-t border-border/40">
-                              <td className="px-2 py-1.5">
-                                <div className="font-medium">{row.gameName}</div>
-                                <div className="text-muted-foreground">AppID {row.appId}</div>
-                              </td>
-                              <td className="px-2 py-1.5">{row.specificProfileName}</td>
-                              <td className="px-2 py-1.5">{row.resolvedProfileName}</td>
-                              <td className="px-2 py-1.5">
-                                <Badge variant="outline">{row.source}</Badge>
-                              </td>
-                            </tr>
-                          ))}
+                          {mappingRows.map((row) => {
+                            const src = profileResolutionSourceLabel(row.source)
+                            return (
+                              <tr key={row.appId} className="border-t border-border/40">
+                                <td className="px-2 py-1.5">
+                                  <div className="font-medium">{row.gameName}</div>
+                                  <div className="text-muted-foreground">AppID {row.appId}</div>
+                                </td>
+                                <td className="px-2 py-1.5">{row.specificProfileName}</td>
+                                <td className="px-2 py-1.5">{row.resolvedProfileName}</td>
+                                <td className="px-2 py-1.5">
+                                  <Badge variant="outline" title={src.title}>
+                                    {src.short}
+                                  </Badge>
+                                </td>
+                              </tr>
+                            )
+                          })}
                         </tbody>
                       </table>
                     </div>
