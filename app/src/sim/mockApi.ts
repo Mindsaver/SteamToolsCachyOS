@@ -130,6 +130,7 @@ const updateErrCh = makeChannel<(i: { message: string }) => void>()
 const updateInstallStartedCh = makeVoidListeners()
 const compatProgCh = makeChannel<(p: CompatInstallProgress) => void>()
 const compatAvailCh = makeChannel<(p: CompatToolsUpdateAvailablePayload) => void>()
+const compatCheckResultCh = makeChannel<(p: CompatUpdateCheckResult) => void>()
 const simMongoConnections = new Map<string, MongoConnectionProfile>()
 const simMongoDocs = new Map<string, HudDocument>()
 const simMongoVersions = new Map<string, Array<HudVersionMeta & { snapshot: HudDocument }>>()
@@ -395,7 +396,6 @@ export const mockApi = {
   installCompatRelease: async (_req: {
     provider: CompatProviderId
     tag: string
-    cachyosArch?: 'x86_64' | 'x86_64_v4'
     installLayout?: 'default' | 'latest_slot'
   }) => {
     await delay(200)
@@ -407,6 +407,7 @@ export const mockApi = {
   openCompatUserSettings: async () => ({ ok: true as const }),
   onCompatToolsProgress: compatProgCh.on,
   onCompatToolsUpdateAvailable: compatAvailCh.on,
+  onCompatToolsCheckResult: compatCheckResultCh.on,
 
   getMangoHudStatus: async (): Promise<MangoHudStatus> => {
     await delay(20)

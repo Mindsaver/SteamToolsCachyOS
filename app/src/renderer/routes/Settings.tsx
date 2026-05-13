@@ -213,9 +213,10 @@ export function Settings() {
         <CardHeader>
           <CardTitle className="text-sm">Compatibility tools (GitHub)</CardTitle>
           <CardDescription>
-            Throttle applies when <strong>Auto update</strong> is enabled on a Latest-line installed tool on the Compatibility tools page (background check on startup; any page).
-            Optional env <code className="text-xs bg-muted px-1 py-0.5 rounded">STEAMTOOLS_GITHUB_TOKEN</code>{' '}
-            raises GitHub API limits.
+            Optional: <strong>Compat check interval (hours)</strong> is kept for a future pacing option; background compat
+            checks currently run on startup, on a fixed timer while the app is open, and when you save Steam path or compat
+            options here. Optional env{' '}
+            <code className="text-xs bg-muted px-1 py-0.5 rounded">STEAMTOOLS_GITHUB_TOKEN</code> raises GitHub API limits.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

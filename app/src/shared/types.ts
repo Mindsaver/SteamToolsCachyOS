@@ -154,7 +154,8 @@ export type CompatInstallLayout = 'default' | 'latest_slot'
 /** `rolling` = follow newest tag in the list. `pinned` = install only the chosen tag (no background “latest” checks). */
 export type CompatReleaseChannel = 'rolling' | 'pinned'
 
-export type CachyosArchChoice = 'x86_64' | 'x86_64_v4'
+/** Upstream Proton-CachyOS archive suffixes (auto-picked from CPU + release assets). */
+export type CachyosArchChoice = 'x86_64' | 'x86_64_v3' | 'x86_64_v4'
 
 export interface AppSettings {
   steamPath: string | null

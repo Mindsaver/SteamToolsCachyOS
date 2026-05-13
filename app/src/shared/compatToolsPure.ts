@@ -2,6 +2,9 @@
 
 import type { CachyosArchChoice, CompatProviderId, InstalledCompatToolRow } from './types'
 
+/** Linux x86-64 feature levels used to order Proton-CachyOS archive candidates (ProtonPlus-style). */
+export type CachyosCpuCaps = { hasX86_64V3: boolean; hasX86_64V4: boolean }
+
 export interface ReleaseAssetStub {
   name: string
   browser_download_url: string
@@ -38,6 +41,37 @@ export function isCachyosProtonTag(tag: string): boolean {
   return tag.trim().toLowerCase().startsWith('cachyos-')
 }
 
+/** Older SteamTools-managed Latest slot id (before ProtonPlus-aligned internal name). */
+export const LEGACY_CACHYOS_LATEST_INTERNAL_TOOL_NAME = 'proton_cachyos_steamtools_latest'
+
+export function isCachyosLatestSlotInternalName(internalName: string): boolean {
+  const t = internalName.trim()
+  return (
+    t === latestSlotInternalToolName('proton_cachyos') ||
+    t === LEGACY_CACHYOS_LATEST_INTERNAL_TOOL_NAME ||
+    /^proton-cachyos latest$/i.test(t)
+  )
+}
+
+/** ProtonPlus / legacy “Latest” folder or internal key (stable SteamTools key included). */
+export function isCachyosLatestSlotRow(
+  row: Pick<InstalledCompatToolRow, 'internalName' | 'dirName' | 'provider'>
+): boolean {
+  if (row.provider !== 'proton_cachyos') return false
+  if (isCachyosLatestSlotInternalName(row.internalName)) return true
+  if (row.dirName.trim() === latestSlotSteamDirName('proton_cachyos')) return true
+  return false
+}
+
+export function isGeLatestSlotRow(
+  row: Pick<InstalledCompatToolRow, 'internalName' | 'dirName' | 'provider'>
+): boolean {
+  if (row.provider !== 'ge_proton') return false
+  if (row.internalName === latestSlotInternalToolName('ge_proton')) return true
+  if (row.dirName.trim() === latestSlotSteamDirName('ge_proton')) return true
+  return false
+}
+
 /**
  * Steam compatibility tool rows that represent the “rolling / Latest” product line (not a fixed version-only slot).
  * Used to show per-install auto-update + CachyOS options only on that entry.
@@ -46,6 +80,7 @@ export function isRollingLineCompatToolRow(
   row: Pick<InstalledCompatToolRow, 'displayName' | 'internalName' | 'dirName' | 'provider'>
 ): boolean {
   if (row.provider !== 'ge_proton' && row.provider !== 'proton_cachyos') return false
+  if (isCachyosLatestSlotRow(row) || isGeLatestSlotRow(row)) return true
   const blob = `${row.displayName} ${row.internalName} ${row.dirName}`.toLowerCase()
   if (/\blatest\b/.test(blob)) return true
   if (/\brolling\b/.test(blob)) return true
@@ -60,9 +95,14 @@ export function latestSlotSteamDirName(provider: CompatProviderId): string {
   return provider === 'ge_proton' ? 'GE-Proton Latest' : 'Proton-CachyOS Latest'
 }
 
-/** Stable `compat_tools` key so Steam + this app keep the same tool across tag bumps. */
+/** ProtonPlus-style pre-replace snapshot for rollback on failed Latest install. */
+export function latestSlotBackupSteamDirName(provider: CompatProviderId): string {
+  return provider === 'ge_proton' ? 'GE-Proton Latest backup' : 'Proton-CachyOS Latest backup'
+}
+
+/** Stable `compat_tools` key so Steam + this app keep the same tool across tag bumps (ProtonPlus uses this id). */
 export function latestSlotInternalToolName(provider: CompatProviderId): string {
-  return provider === 'ge_proton' ? 'GE-Proton-SteamTools-Latest' : 'proton_cachyos_steamtools_latest'
+  return provider === 'ge_proton' ? 'GE-Proton-SteamTools-Latest' : 'Proton-CachyOS Latest'
 }
 
 /** `display_name` written into compatibilitytool.vdf. */
@@ -93,7 +133,7 @@ export function pickGeSha512Asset(assets: ReleaseAssetStub[], tagName: string): 
   return assets.find((a) => a.name === `${tag}.sha512sum`) ?? null
 }
 
-/** CachyOS ships proton-{tag}-{arch}.tar.xz (tag includes e.g. cachyos-10.0-…-slr). */
+/** Upstream ships `proton-cachyos-{rest}-{arch}.tar.xz` where `{rest}` matches the `cachyos-…` tag suffix. */
 export function expectedCachyosArchiveName(tagName: string, arch: CachyosArchChoice): string {
   const tag = tagName.trim()
   return `proton-${tag}-${arch}.tar.xz`
@@ -116,6 +156,29 @@ export function pickCachyosSha512Asset(
   const archive = expectedCachyosArchiveName(tagName, arch)
   const sumName = `${archive.replace(/\.tar\.xz$/i, '')}.sha512sum`
   return assets.find((a) => a.name === sumName) ?? null
+}
+
+/** ProtonPlus-style: prefer higher ISA when CPU supports it, always end with generic fallback. */
+export function cachyosArchCandidatesForCpu(cpu: CachyosCpuCaps): CachyosArchChoice[] {
+  if (cpu.hasX86_64V4) return ['x86_64_v4', 'x86_64_v3', 'x86_64']
+  if (cpu.hasX86_64V3) return ['x86_64_v3', 'x86_64', 'x86_64_v4']
+  return ['x86_64', 'x86_64_v3', 'x86_64_v4']
+}
+
+/** First matching `proton-cachyos-…-{arch}.tar.xz` on the release (any candidate order). */
+export function pickCachyosArchiveForTag(
+  assets: ReleaseAssetStub[],
+  tagName: string,
+  archCandidates: CachyosArchChoice[]
+): { arch: CachyosArchChoice; archive: ReleaseAssetStub; sha512: ReleaseAssetStub | null } | null {
+  for (const arch of archCandidates) {
+    const archive = pickCachyosArchiveAsset(assets, tagName, arch)
+    if (archive) {
+      const sha512 = pickCachyosSha512Asset(assets, tagName, arch)
+      return { arch, archive, sha512 }
+    }
+  }
+  return null
 }
 
 /** Best GE tag among installed internal names / folder names. */

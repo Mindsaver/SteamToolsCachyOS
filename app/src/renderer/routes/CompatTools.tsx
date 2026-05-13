@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Download,
   RefreshCw,
@@ -27,66 +27,41 @@ import {
 import { LogStream } from '../components/LogStream'
 import { SteamStatusPill } from '../components/SteamStatusPill'
 import { api } from '../lib/ipc'
-import { isRollingLineCompatToolRow } from '../../shared/compatToolsPure'
+import {
+  INSTALL_LATEST_SENTINEL,
+  compatInstallLayoutForSelection,
+  normalizeCompatSettings,
+  normalizeReleaseChannel,
+  providerLabel,
+  repoHeadTag,
+  showRollingControlsOnInstalledRow,
+} from '../lib/compatToolsShared'
+import { useCompatUpdate } from '../context/CompatUpdateContext'
 import type {
   AppSettings,
   CompatGithubReleaseRow,
   CompatInstallProgress,
   CompatProviderId,
-  CompatReleaseChannel,
   InstalledCompatToolRow,
-  CompatUpdateCheckResult,
 } from '../../shared/types'
-
-/** `<select>` value: install repository HEAD (`releases[0]`), not a duplicate of the first tag row. */
-const INSTALL_LATEST_SENTINEL = '__install_latest__'
-
-function providerLabel(p: CompatProviderId): string {
-  return p === 'ge_proton' ? 'GE-Proton' : 'Proton-CachyOS'
-}
-
-/** Latest-line installs show per-row auto update (+ CachyOS cog). Bound row still shows if name changed. */
-function showRollingControlsOnInstalledRow(row: InstalledCompatToolRow, s: AppSettings): boolean {
-  if (row.provider === 'ge_proton') {
-    return isRollingLineCompatToolRow(row) || s.geProtonAutoUpdateInternalName === row.internalName
-  }
-  if (row.provider === 'proton_cachyos') {
-    return isRollingLineCompatToolRow(row) || s.protonCachyosAutoUpdateInternalName === row.internalName
-  }
-  return false
-}
-
-function normalizeReleaseChannel(
-  s: AppSettings,
-  p: CompatProviderId
-): CompatReleaseChannel {
-  const raw = p === 'ge_proton' ? s.geProtonChannel : s.protonCachyosChannel
-  return raw === 'rolling' || raw === 'pinned' ? raw : 'pinned'
-}
-
-function normalizeCompatSettings(s: AppSettings): AppSettings {
-  return {
-    ...s,
-    geProtonChannel:
-      s.geProtonChannel === 'rolling' || s.geProtonChannel === 'pinned' ? s.geProtonChannel : 'pinned',
-    protonCachyosChannel:
-      s.protonCachyosChannel === 'rolling' || s.protonCachyosChannel === 'pinned'
-        ? s.protonCachyosChannel
-        : 'pinned',
-    geProtonAutoUpdate: Boolean(s.geProtonAutoUpdate),
-    protonCachyosAutoUpdate: Boolean(s.protonCachyosAutoUpdate),
-    geProtonAutoUpdateInternalName: s.geProtonAutoUpdateInternalName ?? null,
-    protonCachyosAutoUpdateInternalName: s.protonCachyosAutoUpdateInternalName ?? null,
-    geProtonPinnedTag: s.geProtonPinnedTag ?? null,
-    protonCachyosPinnedTag: s.protonCachyosPinnedTag ?? null,
-    protonCachyosSlrOnly: s.protonCachyosSlrOnly !== false,
-    protonCachyosArch: s.protonCachyosArch === 'x86_64_v4' ? 'x86_64_v4' : 'x86_64',
-  }
-}
 
 export function CompatTools() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [provider, setProvider] = useState<CompatProviderId>('ge_proton')
+  const {
+    checks,
+    setCheckResult,
+    clearCheck,
+    installing: compatTabInstalling,
+    installForProvider,
+    installProgress,
+    installSuccessNonce,
+    bumpInstallSuccess,
+    beginCompatInstallProgress,
+    endCompatInstallProgress,
+  } = useCompatUpdate()
+  const checkResult = checks[provider] ?? null
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [steamRunning, setSteamRunning] = useState(false)
   const [installed, setInstalled] = useState<InstalledCompatToolRow[]>([])
@@ -97,8 +72,8 @@ export function CompatTools() {
   const [installing, setInstalling] = useState(false)
   const [progress, setProgress] = useState(0)
   const [logs, setLogs] = useState<CompatInstallProgress[]>([])
-  const [checkResult, setCheckResult] = useState<CompatUpdateCheckResult | null>(null)
   const [cachyosDialogOpen, setCachyosDialogOpen] = useState(false)
+  const [downloadIndeterminate, setDownloadIndeterminate] = useState(false)
 
   const loadSettings = useCallback(async () => {
     const s = await api.getSettings()
@@ -146,7 +121,11 @@ export function CompatTools() {
     const ch = normalizeReleaseChannel(settings, provider)
     const pin = provider === 'ge_proton' ? settings.geProtonPinnedTag : settings.protonCachyosPinnedTag
     setSelectedTag((prev) => {
-      if (ch === 'pinned' && pin && releases.some((r) => r.tag_name === pin)) return pin
+      const head = releases[0]?.tag_name
+      if (ch === 'pinned' && pin && releases.some((r) => r.tag_name === pin)) {
+        if (head && pin === head) return INSTALL_LATEST_SENTINEL
+        return pin
+      }
       if (prev === INSTALL_LATEST_SENTINEL) return INSTALL_LATEST_SENTINEL
       if (prev && releases.some((r) => r.tag_name === prev)) return prev
       return INSTALL_LATEST_SENTINEL
@@ -156,17 +135,33 @@ export function CompatTools() {
   useEffect(() => {
     const off = api.onCompatToolsProgress((p) => {
       if (p.type === 'progress') {
-        if (p.total) {
+        const knownTotal = p.total != null && p.total > 0
+        setDownloadIndeterminate(!knownTotal)
+        if (knownTotal) {
           setProgress(Math.round(((p.current ?? 0) / p.total) * 100))
+        } else {
+          setProgress(0)
         }
         return
       }
+      setDownloadIndeterminate(false)
       setLogs((prev) => [...prev, p])
       if (p.type === 'error') toast.error(p.message)
       if (p.type === 'done') toast.success(p.message)
     })
     return off
   }, [])
+
+  useEffect(() => {
+    const p = searchParams.get('provider')
+    if (p === 'ge_proton' || p === 'proton_cachyos') setProvider(p)
+  }, [searchParams])
+
+  useEffect(() => {
+    if (installSuccessNonce === 0) return
+    void loadInstalled()
+    void loadReleases()
+  }, [installSuccessNonce, loadInstalled, loadReleases])
 
   const persistSettings = async (next: Partial<AppSettings>) => {
     const base = (await api.getSettings()) ?? settings
@@ -182,7 +177,7 @@ export function CompatTools() {
       setCheckResult(r)
       if (r.hasUpdate && r.remoteTag) {
         toast.message(`Update available: ${r.remoteTag}`, {
-          description: `Installed: ${r.installedBestTag ?? 'none'}`,
+          description: `Installed: ${r.installedBestTag ?? 'none'}. Use the banner at the top of the app or open Compat tools to install.`,
         })
       } else {
         toast.success('No newer release detected for this provider')
@@ -220,9 +215,14 @@ export function CompatTools() {
     const raw = await api.getSettings()
     const s = normalizeCompatSettings(raw)
     const ch = normalizeReleaseChannel(s, provider)
-    const tag =
-      selectedTag === INSTALL_LATEST_SENTINEL ? releases[0]?.tag_name : selectedTag
-    if (!tag || !releases.some((r) => r.tag_name === tag)) return
+    const headTag = repoHeadTag(releases)
+    const resolvedTag =
+      selectedTag === INSTALL_LATEST_SENTINEL ? headTag : selectedTag?.trim() || null
+    if (!resolvedTag || !releases.some((r) => r.tag_name === resolvedTag)) {
+      toast.error('No release selected — try Refresh releases, or use “Install this update” after Check for update.')
+      return
+    }
+    const installLayout = compatInstallLayoutForSelection(provider, selectedTag, releases)
     if (steamRunning) {
       toast.info(
         'Steam is running — you can still install. Restart Steam afterward so the new tool shows up in the compatibility list.'
@@ -230,22 +230,26 @@ export function CompatTools() {
     }
     setLogs([])
     setProgress(0)
+    setDownloadIndeterminate(false)
     setInstalling(true)
+    beginCompatInstallProgress(provider)
     try {
       const result = await api.installCompatRelease({
         provider,
-        tag,
-        cachyosArch: provider === 'proton_cachyos' ? s.protonCachyosArch : undefined,
-        installLayout: selectedTag === INSTALL_LATEST_SENTINEL ? 'latest_slot' : 'default',
+        tag: resolvedTag,
+        installLayout,
       })
       if (result?.ok) {
         toast.success('Installed')
+        clearCheck(provider)
+        bumpInstallSuccess()
         if (ch === 'pinned') {
           await persistSettings(
-            provider === 'ge_proton' ? { geProtonPinnedTag: tag } : { protonCachyosPinnedTag: tag }
+            provider === 'ge_proton' ? { geProtonPinnedTag: resolvedTag } : { protonCachyosPinnedTag: resolvedTag }
           )
         }
         await loadInstalled()
+        await loadReleases()
       } else {
         toast.error(result?.error ?? 'Install failed')
       }
@@ -253,6 +257,8 @@ export function CompatTools() {
       toast.error(e instanceof Error ? e.message : 'Install failed')
     } finally {
       setInstalling(false)
+      setDownloadIndeterminate(false)
+      endCompatInstallProgress()
     }
   }
 
@@ -295,9 +301,11 @@ export function CompatTools() {
           <p className="text-muted-foreground mt-1 max-w-3xl">
             Install <strong>GE-Proton</strong> or <strong>Proton-CachyOS</strong> into Steam&apos;s{' '}
             <code className="text-xs bg-muted px-1 py-0.5 rounded">compatibilitytools.d</code>.
-            Installs whose name looks like the <strong>Latest</strong> line show <strong>Auto update</strong> on that row
-            (background GitHub checks; throttle in Settings). Other installed builds are listed without that control.             Under <strong>Install release</strong>, <strong>Latest</strong> is always the first option (current HEAD); then
-            all tags. Set{' '}
+            When updates are available, a banner appears at the top of the app on every page with{' '}
+            <strong>Install this update</strong>. Installs whose name looks like the <strong>Latest</strong> line show{' '}
+            <strong>Auto update</strong> on that row (background GitHub checks). Other installed builds are listed without
+            that control. Under <strong>Install release</strong>, <strong>Latest</strong> is always the first option (current
+            HEAD); then all tags. Set{' '}
             <code className="text-xs bg-muted px-1 py-0.5 rounded">STEAMTOOLS_GITHUB_TOKEN</code> if you hit API limits.
           </p>
         </div>
@@ -327,7 +335,7 @@ export function CompatTools() {
         {provider === 'proton_cachyos' && settings && !hasCachyRollingRow && (
           <Button variant="outline" size="sm" type="button" onClick={() => setCachyosDialogOpen(true)}>
             <Settings className="h-3.5 w-3.5 mr-1.5" />
-            SLR &amp; arch
+            SLR filter
           </Button>
         )}
       </div>
@@ -337,7 +345,7 @@ export function CompatTools() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Proton-CachyOS</DialogTitle>
-              <DialogDescription>Filter the tag list and pick the archive architecture.</DialogDescription>
+              <DialogDescription>Filter the GitHub tag list (SLR builds).</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
@@ -349,21 +357,10 @@ export function CompatTools() {
                 />
                 SLR tags only (<code className="text-xs">-slr</code>)
               </label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground shrink-0">Arch</span>
-                <Select
-                  value={settings.protonCachyosArch}
-                  onChange={(e) =>
-                    void persistSettings({
-                      protonCachyosArch: e.target.value as AppSettings['protonCachyosArch'],
-                    })
-                  }
-                  className="flex-1 min-w-0"
-                >
-                  <option value="x86_64">x86_64 (recommended)</option>
-                  <option value="x86_64_v4">x86_64_v4 (experimental)</option>
-                </Select>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Download architecture (x86_64 / x86_64_v3 / x86_64_v4) is chosen automatically from your CPU and the
+                release assets (ProtonPlus-style).
+              </p>
             </div>
             <DialogFooter>
               <Button type="button" onClick={() => setCachyosDialogOpen(false)}>
@@ -461,6 +458,56 @@ export function CompatTools() {
             <CardTitle className="text-sm">Install release</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 flex-1 flex flex-col">
+            {checkResult?.hasUpdate && checkResult.remoteTag && checkResult.provider === provider && (
+              <div className="rounded-md border border-primary/35 bg-primary/5 p-3 space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-xs font-semibold text-primary uppercase tracking-wide">GitHub update</p>
+                    <p className="text-sm font-mono text-foreground break-all">{checkResult.remoteTag}</p>
+                    {checkResult.installedBestTag ? (
+                      <p className="text-xs text-muted-foreground">
+                        Best tag detected on disk: <span className="font-mono">{checkResult.installedBestTag}</span>
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={installing || Boolean(compatTabInstalling[provider])}
+                      onClick={() => void installForProvider(provider)}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Install this update
+                    </Button>
+                    {checkResult.releaseUrl ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        onClick={() => void api.openExternalUrl(checkResult.releaseUrl!)}
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Open release
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                {compatTabInstalling[provider] && installProgress?.provider === provider ? (
+                  <div className="space-y-1.5 border-t border-primary/15 pt-2">
+                    <Progress
+                      value={installProgress.percent}
+                      indeterminate={installProgress.indeterminate}
+                      className="h-2"
+                    />
+                    <p className="text-[11px] text-muted-foreground truncate">{installProgress.subtitle}</p>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground">Version to install</p>
               <Select
@@ -481,14 +528,9 @@ export function CompatTools() {
               </Select>
             </div>
 
-            {checkResult?.releaseUrl && (
-              <Button variant="ghost" size="icon" title="Open release" onClick={() => api.openExternalUrl(checkResult.releaseUrl!)}>
-                <ExternalLink className="h-4 w-4" />
-              </Button>
-            )}
             <Button
               onClick={() => void handleInstall()}
-              disabled={installing || !canInstall}
+              disabled={installing || Boolean(compatTabInstalling[provider]) || !canInstall}
               className="gap-2 w-fit"
             >
               <Download className="h-4 w-4" />
@@ -502,7 +544,12 @@ export function CompatTools() {
             )}
             {installing && (
               <div className="space-y-1">
-                <Progress value={progress} className="h-2" />
+                <p className="text-xs text-muted-foreground">
+                  {downloadIndeterminate
+                    ? 'Downloading… (release server did not report file size — progress is shown below)'
+                    : 'Downloading…'}
+                </p>
+                <Progress value={progress} indeterminate={downloadIndeterminate} className="h-2" />
               </div>
             )}
             {logs.length > 0 && (

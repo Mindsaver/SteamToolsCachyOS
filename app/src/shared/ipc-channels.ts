@@ -75,6 +75,8 @@ export const IPC = {
   COMPAT_TOOLS_CHECK_UPDATE: 'compat-tools:check-update',
   COMPAT_TOOLS_PROGRESS: 'compat-tools:progress',
   COMPAT_TOOLS_UPDATE_AVAILABLE: 'compat-tools:update-available',
+  /** Full check result (same shape as checkCompatToolsUpdate) so Compat tools UI updates without clicking Check. */
+  COMPAT_TOOLS_CHECK_RESULT: 'compat-tools:check-result',
   COMPAT_TOOLS_OPEN_USER_SETTINGS: 'compat-tools:open-user-settings',
 
   // MangoHud system config

@@ -119,6 +119,13 @@ app.whenReady().then(() => {
     void runCompatToolsAutoCheck(mainWindow)
   }, 5000)
 
+  // Re-run compat GitHub checks while the app stays open (same cadence as before; checks are no longer epoch-throttled).
+  const compatPollMs = 30 * 60 * 1000
+  setInterval(() => {
+    const win = mainWindow
+    if (win && !win.isDestroyed()) void runCompatToolsAutoCheck(win)
+  }, compatPollMs)
+
   app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()

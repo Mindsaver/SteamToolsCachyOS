@@ -4,15 +4,24 @@ import {
   pickGeSha512Asset,
   pickCachyosArchiveAsset,
   pickCachyosSha512Asset,
+  pickCachyosArchiveForTag,
   filterCachyosReleases,
   compareGeTagsDesc,
   bestInstalledGeTag,
   extractCachyosTagFromText,
   expectedCachyosArchiveName,
+  bestInstalledCachyosTagFromReleases,
   isRollingLineCompatToolRow,
+  isCachyosLatestSlotRow,
+  isCachyosLatestSlotInternalName,
+  cachyosArchCandidatesForCpu,
   latestSlotSteamDirName,
   latestSlotDisplayName,
+  latestSlotBackupSteamDirName,
+  latestSlotInternalToolName,
+  LEGACY_CACHYOS_LATEST_INTERNAL_TOOL_NAME,
 } from '../../src/shared/compatToolsPure'
+import type { CachyosArchChoice } from '../../src/shared/types'
 
 describe('compatToolsPure', () => {
   it('pickGeArchive prefers zst', () => {
@@ -71,6 +80,71 @@ describe('compatToolsPure', () => {
     ]
     expect(pickCachyosArchiveAsset(assets, tag, 'x86_64')?.name).toBe(name)
     expect(pickCachyosSha512Asset(assets, tag, 'x86_64')?.name).toBe(sum)
+  })
+
+  it('pickCachyosArchiveForTag uses candidate order', () => {
+    const tag = 'cachyos-11.0-slr'
+    const assets = [
+      { name: 'proton-cachyos-11.0-slr-x86_64.tar.xz', browser_download_url: 'https://x/64', size: 1 },
+      { name: 'proton-cachyos-11.0-slr-x86_64_v3.tar.xz', browser_download_url: 'https://x/v3', size: 1 },
+    ]
+    const order: CachyosArchChoice[] = ['x86_64_v3', 'x86_64']
+    const pick = pickCachyosArchiveForTag(assets, tag, order)
+    expect(pick?.arch).toBe('x86_64_v3')
+    expect(pick?.archive.name).toContain('x86_64_v3')
+  })
+
+  it('cachyosArchCandidatesForCpu ordering', () => {
+    expect(cachyosArchCandidatesForCpu({ hasX86_64V3: true, hasX86_64V4: false })).toEqual([
+      'x86_64_v3',
+      'x86_64',
+      'x86_64_v4',
+    ])
+    expect(cachyosArchCandidatesForCpu({ hasX86_64V3: false, hasX86_64V4: false })).toEqual([
+      'x86_64',
+      'x86_64_v3',
+      'x86_64_v4',
+    ])
+    expect(cachyosArchCandidatesForCpu({ hasX86_64V3: true, hasX86_64V4: true })).toEqual([
+      'x86_64_v4',
+      'x86_64_v3',
+      'x86_64',
+    ])
+  })
+
+  it('isCachyosLatestSlotRow detects ProtonPlus-style Latest folder', () => {
+    expect(
+      isCachyosLatestSlotRow({
+        internalName: 'Proton-CachyOS Latest',
+        dirName: 'Proton-CachyOS Latest',
+        provider: 'proton_cachyos',
+      })
+    ).toBe(true)
+  })
+
+  it('latest slot CachyOS internal id matches ProtonPlus', () => {
+    expect(latestSlotInternalToolName('proton_cachyos')).toBe('Proton-CachyOS Latest')
+  })
+
+  it('isCachyosLatestSlotInternalName accepts ProtonPlus and legacy ids', () => {
+    expect(isCachyosLatestSlotInternalName('Proton-CachyOS Latest')).toBe(true)
+    expect(isCachyosLatestSlotInternalName(LEGACY_CACHYOS_LATEST_INTERNAL_TOOL_NAME)).toBe(true)
+    expect(isCachyosLatestSlotInternalName('cachyos-10.0-slr')).toBe(false)
+  })
+
+  it('latestSlotBackupSteamDirName', () => {
+    expect(latestSlotBackupSteamDirName('proton_cachyos')).toBe('Proton-CachyOS Latest backup')
+    expect(latestSlotBackupSteamDirName('ge_proton')).toBe('GE-Proton Latest backup')
+  })
+
+  it('bestInstalledCachyosTagFromReleases picks newest tag present in both set and list', () => {
+    const releases = [
+      { tag_name: 'cachyos-11.0-slr', published_at: '2026-05-01', assets: [] },
+      { tag_name: 'cachyos-10.0-slr', published_at: '2026-04-01', assets: [] },
+    ]
+    expect(bestInstalledCachyosTagFromReleases(['cachyos-10.0-slr', 'cachyos-11.0-slr'], releases)).toBe(
+      'cachyos-11.0-slr'
+    )
   })
 
   it('extractCachyosTagFromText', () => {

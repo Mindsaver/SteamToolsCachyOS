@@ -138,7 +138,6 @@ const realApi = {
   installCompatRelease: (req: {
     provider: CompatProviderId
     tag: string
-    cachyosArch?: 'x86_64' | 'x86_64_v4'
     installLayout?: CompatInstallLayout
   }) => ipcRenderer.invoke(IPC.COMPAT_TOOLS_INSTALL, req),
   openCompatUserSettings: (internalName: string) =>
@@ -152,6 +151,11 @@ const realApi = {
     const handler = (_: unknown, p: CompatToolsUpdateAvailablePayload) => cb(p)
     ipcRenderer.on(IPC.COMPAT_TOOLS_UPDATE_AVAILABLE, handler)
     return () => ipcRenderer.removeListener(IPC.COMPAT_TOOLS_UPDATE_AVAILABLE, handler)
+  },
+  onCompatToolsCheckResult: (cb: (p: CompatUpdateCheckResult) => void) => {
+    const handler = (_: unknown, p: CompatUpdateCheckResult) => cb(p)
+    ipcRenderer.on(IPC.COMPAT_TOOLS_CHECK_RESULT, handler)
+    return () => ipcRenderer.removeListener(IPC.COMPAT_TOOLS_CHECK_RESULT, handler)
   },
 
   getMangoHudStatus: (): Promise<MangoHudStatus> => ipcRenderer.invoke(IPC.MANGOHUD_STATUS),

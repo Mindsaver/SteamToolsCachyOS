@@ -61,6 +61,7 @@ import { detectGpuVendors } from './services/gpu/detect'
 import { transformLaunchOptions } from '../shared/launchOptions/compose'
 import { loadSettings, saveSettings } from './services/settings'
 import { checkForUpdates, downloadUpdate, installUpdate } from './services/updater'
+import { runCompatToolsAutoCheck } from './services/steam/compatToolsAuto'
 import {
   createMongoHudVersion,
   deleteMongoHudConnection,
@@ -93,6 +94,21 @@ import {
   saveMangoHudConfig,
   syncRuntimeFsrTextToMangoHud,
 } from './services/mangohud'
+function compatToolsAutoSettingsFingerprint(s: AppSettings): string {
+  return JSON.stringify({
+    steamPath: s.steamPath ?? null,
+    geProtonAutoUpdate: s.geProtonAutoUpdate,
+    geProtonAutoUpdateInternalName: s.geProtonAutoUpdateInternalName ?? null,
+    protonCachyosAutoUpdate: s.protonCachyosAutoUpdate,
+    protonCachyosAutoUpdateInternalName: s.protonCachyosAutoUpdateInternalName ?? null,
+    geProtonChannel: s.geProtonChannel,
+    protonCachyosChannel: s.protonCachyosChannel,
+    compatToolsSilentAutoInstall: s.compatToolsSilentAutoInstall,
+    protonCachyosSlrOnly: s.protonCachyosSlrOnly !== false,
+    compatToolsCheckThrottleHours: s.compatToolsCheckThrottleHours,
+  })
+}
+
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // ── Steam ──────────────────────────────────────────────────────────────────
 
@@ -525,11 +541,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       }
     }
     if (payload.provider === 'ge_proton') return checkGeProtonUpdate(installPath)
-    return checkCachyosUpdate(
-      installPath,
-      settings.protonCachyosSlrOnly,
-      settings.protonCachyosArch
-    )
+    return checkCachyosUpdate(installPath, settings.protonCachyosSlrOnly)
   })
 
   ipcMain.handle(
@@ -539,19 +551,17 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       payload: {
         provider: CompatProviderId
         tag: string
-        cachyosArch?: 'x86_64' | 'x86_64_v4'
+        cachyosArch?: 'x86_64' | 'x86_64_v3' | 'x86_64_v4'
         installLayout?: CompatInstallLayout
       }
     ) => {
       const settings = loadSettings()
       const installPath = settings.steamPath || resolveSteamInstall()
       if (!installPath) return { ok: false, error: 'Steam not found' }
-      const arch = payload.cachyosArch ?? settings.protonCachyosArch
       return installCompatRelease({
         provider: payload.provider,
         tag: payload.tag,
         steamInstall: installPath,
-        cachyosArch: arch,
         installLayout: payload.installLayout ?? 'default',
         onProgress: (p) => mainWindow.webContents.send(IPC.COMPAT_TOOLS_PROGRESS, p),
       })
@@ -573,7 +583,17 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(IPC.SETTINGS_GET, () => loadSettings())
   ipcMain.handle(IPC.SETTINGS_SET, (_e, settings: Partial<AppSettings> & Record<string, unknown>) => {
-    saveSettings({ ...loadSettings(), ...settings } as AppSettings)
+    const prev = loadSettings()
+    const fpBefore = compatToolsAutoSettingsFingerprint(prev)
+    saveSettings({ ...prev, ...settings } as AppSettings)
+    const next = loadSettings()
+    if (
+      compatToolsAutoSettingsFingerprint(next) !== fpBefore &&
+      mainWindow?.webContents &&
+      !mainWindow.isDestroyed()
+    ) {
+      void runCompatToolsAutoCheck(mainWindow, { bypassThrottle: true })
+    }
     return { ok: true }
   })
 

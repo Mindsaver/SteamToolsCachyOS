@@ -23,6 +23,8 @@ import { CompatTools } from './routes/CompatTools'
 import { MangoHudLive } from './routes/MangoHudLive'
 import { Settings } from './routes/Settings'
 import { AboutDialog } from './components/AboutDialog'
+import { CompatToolsUpdateBanner } from './components/CompatToolsUpdateBanner'
+import { CompatUpdateProvider } from './context/CompatUpdateContext'
 import { api } from './lib/ipc'
 
 // Sim mode is set by the preload at build time via contextBridge.
@@ -63,8 +65,8 @@ export default function App() {
   useEffect(() => {
     return api.onCompatToolsUpdateAvailable((p) => {
       const label = p.provider === 'ge_proton' ? 'GE-Proton' : 'Proton-CachyOS'
-      toast.message(`${label}: auto update — newer build available`, {
-        description: p.remoteTag,
+      toast.message(`${label}: newer build on GitHub`, {
+        description: `${p.remoteTag ?? ''} — Use the banner at the top of the window to install, or open Compat tools. (Silent background install only when enabled in Settings.)`,
         action: {
           label: 'Open compat tools',
           onClick: () => navigate('/compat-tools'),
@@ -142,7 +144,8 @@ export default function App() {
   }, [mangoHudAutoSync])
 
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+    <CompatUpdateProvider>
+      <div className="flex h-screen bg-background text-foreground overflow-hidden">
       {/* Sidebar */}
       <aside className="flex flex-col w-52 shrink-0 border-r border-border bg-card">
         {/* Logo */}
@@ -218,6 +221,7 @@ export default function App() {
         {(IS_SIM || true) && (
           <div className="flex flex-col gap-2 px-4 pt-3">
             {IS_SIM && <SimBanner />}
+            <CompatToolsUpdateBanner />
             <UpdateBanner />
           </div>
         )}
@@ -250,5 +254,6 @@ export default function App() {
         }}
       />
     </div>
+    </CompatUpdateProvider>
   )
 }

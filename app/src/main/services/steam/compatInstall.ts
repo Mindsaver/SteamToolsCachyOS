@@ -17,22 +17,26 @@ import type {
 import {
   pickGeArchiveAsset,
   pickGeSha512Asset,
-  pickCachyosArchiveAsset,
+  pickCachyosArchiveForTag,
   pickCachyosSha512Asset,
   filterCachyosReleases,
   compareGeTagsDesc,
   bestInstalledGeTag,
   bestInstalledCachyosTagFromReleases,
   extractCachyosTagFromText,
+  cachyosArchCandidatesForCpu,
   latestSlotDisplayName,
   latestSlotInternalToolName,
   latestSlotSteamDirName,
+  latestSlotBackupSteamDirName,
 } from '../../../shared/compatToolsPure'
 import type { ReleaseStub } from '../../../shared/compatToolsPure'
 import { fetchReleaseByTag, fetchRepoReleases } from './compatGithub'
 import { listInstalledCompatTools } from './compatInstalled'
 import { isSteamRunning } from './processes'
 import { loadSettings } from '../settings'
+import { readLinuxX86CpuCaps } from './cpuCapsLinux'
+import { userSettingsBackupsDir } from './userSettings'
 
 const execFileAsync = promisify(execFile)
 
@@ -40,6 +44,112 @@ const GE_OWNER = 'GloriousEggroll'
 const GE_REPO = 'proton-ge-custom'
 const CACHY_OWNER = 'CachyOS'
 const CACHY_REPO = 'proton-cachyos'
+
+function readCachyosTagCandidatesFromInstallPath(installPath: string, internalName: string, dirName: string): string[] {
+  const tags = new Set<string>()
+  for (const text of [internalName, dirName]) {
+    const ex = extractCachyosTagFromText(text)
+    if (ex) tags.add(ex.trim())
+  }
+  for (const rel of ['version', '.protonplus_tag'] as const) {
+    try {
+      const p = path.join(installPath, rel)
+      if (!fs.existsSync(p)) continue
+      const raw = fs.readFileSync(p, 'utf-8')
+      const ex = extractCachyosTagFromText(raw)
+      if (ex) tags.add(ex.trim())
+    } catch {
+      // skip
+    }
+  }
+  return [...tags]
+}
+
+function findNewestInstallableCachyosRelease(
+  releases: ReleaseStub[],
+  archCandidates: CachyosArchChoice[]
+): { release: ReleaseStub; arch: CachyosArchChoice } | null {
+  for (const r of releases) {
+    const pick = pickCachyosArchiveForTag(r.assets, r.tag_name, archCandidates)
+    if (pick) return { release: r, arch: pick.arch }
+  }
+  return null
+}
+
+async function mergeLatestSlotUserArtifacts(
+  backupToolDir: string,
+  newToolDir: string,
+  onProgress?: (p: CompatInstallProgress) => void
+): Promise<void> {
+  const usFrom = path.join(backupToolDir, 'user_settings.py')
+  const usTo = path.join(newToolDir, 'user_settings.py')
+  if (fs.existsSync(usFrom)) {
+    emit(onProgress, {
+      type: 'log',
+      message: 'Carrying over user_settings.py from previous Latest install…',
+    })
+    await fs.promises.copyFile(usFrom, usTo)
+  }
+  const bakFrom = userSettingsBackupsDir(backupToolDir)
+  const bakTo = userSettingsBackupsDir(newToolDir)
+  if (fs.existsSync(bakFrom)) {
+    emit(onProgress, {
+      type: 'log',
+      message: 'Carrying over SteamTools user settings backups…',
+    })
+    await fs.promises.cp(bakFrom, bakTo, { recursive: true, force: true })
+  }
+}
+
+/** ProtonPlus-style: rename existing Latest → Latest backup, publish new tree, rollback on failure. */
+async function publishLatestSlotWithBackup(options: {
+  provider: CompatProviderId
+  extractedToolDir: string
+  destRoot: string
+  onProgress?: (p: CompatInstallProgress) => void
+}): Promise<void> {
+  const { provider, extractedToolDir, destRoot, onProgress } = options
+  const finalPath = path.join(destRoot, latestSlotSteamDirName(provider))
+  const backupPath = path.join(destRoot, latestSlotBackupSteamDirName(provider))
+
+  await fs.promises.rm(backupPath, { recursive: true, force: true }).catch(() => {})
+
+  const hadExisting = fs.existsSync(finalPath)
+  if (hadExisting) {
+    emit(onProgress, {
+      type: 'log',
+      message: `Renaming “${path.basename(finalPath)}” → “${path.basename(backupPath)}” (rollback snapshot)…`,
+    })
+    await fs.promises.rename(finalPath, backupPath)
+  }
+
+  try {
+    await fs.promises.cp(extractedToolDir, finalPath, { recursive: true })
+    if (hadExisting && fs.existsSync(backupPath)) {
+      await mergeLatestSlotUserArtifacts(backupPath, finalPath, onProgress)
+    }
+    await fs.promises.rm(backupPath, { recursive: true, force: true }).catch(() => {})
+    if (hadExisting) {
+      emit(onProgress, {
+        type: 'log',
+        message: 'Rollback snapshot removed after successful install.',
+      })
+    }
+  } catch (e) {
+    await fs.promises.rm(finalPath, { recursive: true, force: true }).catch(() => {})
+    if (hadExisting && fs.existsSync(backupPath)) {
+      emit(onProgress, {
+        type: 'log',
+        message: `Install failed — restoring “${path.basename(finalPath)}” from backup…`,
+      })
+      await fs.promises.rename(backupPath, finalPath).catch(async () => {
+        await fs.promises.cp(backupPath, finalPath, { recursive: true })
+        await fs.promises.rm(backupPath, { recursive: true, force: true }).catch(() => {})
+      })
+    }
+    throw e
+  }
+}
 
 function emit(cb: ((p: CompatInstallProgress) => void) | undefined, p: CompatInstallProgress): void {
   cb?.(p)
@@ -73,6 +183,49 @@ async function verifySha512File(
   await pipeline(rs, hash)
   const got = hash.digest('hex').toLowerCase()
   if (got !== expected) throw new Error('SHA512 checksum mismatch')
+}
+
+/** GitHub often omits Content-Length; still emit throttled log + indeterminate progress for the UI. */
+function wrapArchiveDownloadProgress(
+  onProgress: ((p: CompatInstallProgress) => void) | undefined,
+  emitProgress: typeof emit
+): (loaded: number, total: number | null) => void {
+  let lastLogMs = 0
+  let bootstrappedUnknown = false
+  return (loaded: number, total: number | null) => {
+    if (total != null && total > 0) {
+      emitProgress(onProgress, {
+        type: 'progress',
+        message: 'Downloading…',
+        current: loaded,
+        total,
+      })
+      return
+    }
+    if (!bootstrappedUnknown && loaded > 0) {
+      bootstrappedUnknown = true
+      emitProgress(onProgress, {
+        type: 'progress',
+        message: 'Downloading…',
+        current: 0,
+        total: 0,
+      })
+    }
+    const now = Date.now()
+    if (now - lastLogMs < 900) return
+    lastLogMs = now
+    const mib = loaded / (1024 * 1024)
+    emitProgress(onProgress, {
+      type: 'log',
+      message: `Downloading… ${mib.toFixed(1)} MiB received (server did not report total size)`,
+    })
+    emitProgress(onProgress, {
+      type: 'progress',
+      message: 'Downloading…',
+      current: 0,
+      total: 0,
+    })
+  }
 }
 
 async function downloadToFile(
@@ -177,22 +330,17 @@ async function extractToSingleSubdir(archivePath: string, stageDir: string): Pro
   return path.join(stageDir, dirs[0])
 }
 
-async function moveTreeReplace(src: string, dest: string): Promise<void> {
-  await fs.promises.rm(dest, { recursive: true, force: true }).catch(() => {})
-  await fs.promises.cp(src, dest, { recursive: true })
-  await fs.promises.rm(src, { recursive: true, force: true })
-}
-
 export async function installCompatRelease(options: {
   provider: CompatProviderId
   tag: string
   steamInstall: string
+  /** @deprecated CachyOS arch is auto-detected from CPU + release assets (ProtonPlus-style). */
   cachyosArch?: CachyosArchChoice
   /** When `latest_slot`, install under `Proton-CachyOS Latest` / `GE-Proton Latest` with stable Steam names. */
   installLayout?: CompatInstallLayout
   onProgress?: (p: CompatInstallProgress) => void
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { provider, tag, steamInstall, cachyosArch = 'x86_64', installLayout = 'default', onProgress } = options
+  const { provider, tag, steamInstall, installLayout = 'default', onProgress } = options
   if (isSteamRunning()) {
     emit(onProgress, {
       type: 'log',
@@ -228,8 +376,17 @@ export async function installCompatRelease(options: {
       archive = pickGeArchiveAsset(release.assets, release.tag_name)
       sumAsset = pickGeSha512Asset(release.assets, release.tag_name)
     } else {
-      archive = pickCachyosArchiveAsset(release.assets, release.tag_name, cachyosArch)
-      sumAsset = pickCachyosSha512Asset(release.assets, release.tag_name, cachyosArch)
+      const archCandidates = cachyosArchCandidatesForCpu(readLinuxX86CpuCaps())
+      const resolved = pickCachyosArchiveForTag(release.assets, release.tag_name, archCandidates)
+      if (!resolved) {
+        return { ok: false, error: 'No matching archive asset on this release' }
+      }
+      archive = resolved.archive
+      sumAsset = resolved.sha512
+      emit(onProgress, {
+        type: 'log',
+        message: `Using Proton-CachyOS build ${resolved.arch} (auto-selected).`,
+      })
     }
 
     if (!archive) {
@@ -239,16 +396,8 @@ export async function installCompatRelease(options: {
     const archivePath = path.join(work, archive.name)
     emit(onProgress, { type: 'log', message: `Downloading ${archive.name}…` })
 
-    await downloadToFile(archive.browser_download_url, archivePath, (loaded, total) => {
-      if (total && total > 0) {
-        emit(onProgress, {
-          type: 'progress',
-          message: 'Downloading…',
-          current: loaded,
-          total,
-        })
-      }
-    })
+    const onDl = wrapArchiveDownloadProgress(onProgress, emit)
+    await downloadToFile(archive.browser_download_url, archivePath, onDl)
 
     if (sumAsset) {
       const sumPath = path.join(work, sumAsset.name)
@@ -265,8 +414,12 @@ export async function installCompatRelease(options: {
         message: `Publishing as “${latestSlotDisplayName(provider)}” (${latestSlotSteamDirName(provider)})…`,
       })
       rewriteCompatToolVdfLatestSlot(extracted, provider)
-      const finalPath = path.join(destRoot, latestSlotSteamDirName(provider))
-      await moveTreeReplace(extracted, finalPath)
+      await publishLatestSlotWithBackup({
+        provider,
+        extractedToolDir: extracted,
+        destRoot,
+        onProgress,
+      })
       emit(onProgress, { type: 'done', message: `Installed ${latestSlotDisplayName(provider)}` })
     } else {
       emit(onProgress, { type: 'log', message: `Extracting into ${destRoot}…` })
@@ -296,6 +449,12 @@ export async function listCachyosReleasesForUi(slrOnly: boolean): Promise<Releas
     const tb = Date.parse(b.published_at) || 0
     return tb - ta
   })
+  const archCandidates = cachyosArchCandidatesForCpu(readLinuxX86CpuCaps())
+  const idx = filtered.findIndex((r) => pickCachyosArchiveForTag(r.assets, r.tag_name, archCandidates))
+  if (idx > 0) {
+    const [head] = filtered.splice(idx, 1)
+    filtered.unshift(head)
+  }
   return filtered
 }
 
@@ -338,50 +497,33 @@ export async function checkGeProtonUpdate(steamInstall: string): Promise<CompatU
   }
 }
 
-export async function checkCachyosUpdate(
-  steamInstall: string,
-  slrOnly: boolean,
-  arch: CachyosArchChoice
-): Promise<CompatUpdateCheckResult> {
+export async function checkCachyosUpdate(steamInstall: string, slrOnly: boolean): Promise<CompatUpdateCheckResult> {
   const rows = listInstalledCompatTools(steamInstall)
   const tagSet = new Set<string>()
   for (const r of rows.filter((x) => x.provider === 'proton_cachyos')) {
-    for (const text of [r.internalName, r.dirName]) {
-      const ex = extractCachyosTagFromText(text)
-      if (ex) tagSet.add(ex)
+    for (const t of readCachyosTagCandidatesFromInstallPath(r.installPath, r.internalName, r.dirName)) {
+      tagSet.add(t)
     }
   }
-  if (rows.some((r) => r.internalName === latestSlotInternalToolName('proton_cachyos'))) {
-    const last = loadSettings().compatCachyosLastRemoteTag
-    if (last) tagSet.add(last)
-  }
+  // Do not merge compatCachyosLastRemoteTag here: that value tracks “newest seen on GitHub”, not what is
+  // actually extracted on disk. Mixing it in made bestInstalledTag jump ahead of the real build (e.g. v11
+  // cached while version/.protonplus_tag still say v10) and incorrectly reported “no update”.
   const tagsFromRows = [...tagSet]
 
   const releases = await listCachyosReleasesForUi(slrOnly)
-  const remoteTag = releases[0]?.tag_name ?? null
+  const archCandidates = cachyosArchCandidatesForCpu(readLinuxX86CpuCaps())
+  const newest = findNewestInstallableCachyosRelease(releases, archCandidates)
+  const remoteTag = newest?.release.tag_name ?? null
 
   const installedBest =
     tagsFromRows.length > 0 ? bestInstalledCachyosTagFromReleases(tagsFromRows, releases) : null
 
   let hasUpdate = false
-  if (remoteTag && releases.length) {
-    const remoteRelease = releases.find((r) => r.tag_name === remoteTag)
-    const asset = remoteRelease
-      ? pickCachyosArchiveAsset(remoteRelease.assets, remoteTag, arch)
-      : null
-    if (!asset) {
-      return {
-        provider: 'proton_cachyos',
-        hasUpdate: false,
-        remoteTag,
-        installedBestTag: installedBest,
-        releaseUrl: `https://github.com/${CACHY_OWNER}/${CACHY_REPO}/releases/tag/${encodeURIComponent(remoteTag)}`,
-      }
-    }
+  if (remoteTag && releases.length && newest) {
     const idxRemote = releases.findIndex((r) => r.tag_name === remoteTag)
     const idxInst = installedBest ? releases.findIndex((r) => r.tag_name === installedBest) : -1
     if (!installedBest && rows.some((r) => r.provider === 'proton_cachyos')) {
-      hasUpdate = false
+      hasUpdate = idxRemote >= 0
     } else if (!installedBest) {
       hasUpdate = true
     } else {

@@ -3,9 +3,21 @@ import { cn } from '../../lib/utils'
 
 interface ProgressProps extends React.HTMLAttributes<HTMLDivElement> {
   value?: number
+  /** When true, show an indeterminate bar (e.g. download with unknown total size). */
+  indeterminate?: boolean
 }
 
-function Progress({ className, value = 0, ...props }: ProgressProps) {
+function Progress({ className, value = 0, indeterminate = false, ...props }: ProgressProps) {
+  if (indeterminate) {
+    return (
+      <div
+        className={cn('relative h-2 w-full overflow-hidden rounded-full bg-secondary', className)}
+        {...props}
+      >
+        <div className="h-full w-full origin-left animate-pulse bg-primary/70" />
+      </div>
+    )
+  }
   return (
     <div
       className={cn('relative h-2 w-full overflow-hidden rounded-full bg-secondary', className)}
